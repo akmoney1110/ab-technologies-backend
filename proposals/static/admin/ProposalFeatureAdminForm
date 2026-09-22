@@ -1,0 +1,313 @@
+
+(function () {
+    "use strict";
+
+    /*
+     * Pricing information is generated from PRICING_CATALOG
+     * by the Django admin form.
+     *
+     * The option values contain the feature key.
+     *
+     * We fetch the pricing information from the backend
+     * endpoint instead of duplicating pricing.py in JavaScript.
+     */
+
+    function getFeatureRows() {
+        return document.querySelectorAll(
+            ".dynamic-proposalfeature_set"
+        );
+    }
+
+
+    function formatCurrency(value) {
+        const number = Number(value || 0);
+
+        return new Intl.NumberFormat(
+            "en-NG",
+            {
+                style: "currency",
+                currency: "NGN",
+                maximumFractionDigits: 2,
+            }
+        ).format(number);
+    }
+
+
+    function calculatePrice(min, max, complexity) {
+
+        min = Number(min);
+        max = Number(max);
+
+        if (complexity === "low") {
+            return min;
+        }
+
+        if (complexity === "high") {
+            return max;
+        }
+
+        // medium
+        return (min + max) / 2;
+    }
+
+
+    function updateRow(row) {
+
+        const featureSelect = row.querySelector(
+            'select[name$="-feature_key"]'
+        );
+
+        const complexitySelect = row.querySelector(
+            'select[name$="-complexity"]'
+        );
+
+        const quantityInput = row.querySelector(
+            'input[name$="-quantity"]'
+        );
+
+        const unitPriceInput = row.querySelector(
+            'input[name$="-unit_price"]'
+        );
+
+        const totalPriceInput = row.querySelector(
+            'input[name$="-total_price"]'
+        );
+
+        if (
+            !featureSelect ||
+            !complexitySelect ||
+            !quantityInput
+        ) {
+            return;
+        }
+
+        const featureKey =
+            featureSelect.value;
+
+        const complexity =
+            complexitySelect.value;
+
+        const quantity =
+            Number(quantityInput.value || 1);
+
+
+        if (!featureKey) {
+
+            if (unitPriceInput) {
+                unitPriceInput.value = "";
+            }
+
+            if (totalPriceInput) {
+                totalPriceInput.value = "";
+            }
+
+            return;
+        }
+
+
+        /*
+         * Pricing data is stored on the option.
+         */
+
+        const option =
+            featureSelect.options[
+            featureSelect.selectedIndex
+            ];
+
+
+        const min =
+            Number(
+                option.dataset.min || 0
+            );
+
+        const max =
+            Number(
+                option.dataset.max || 0
+            );
+
+
+        if (!min && !max) {
+            return;
+        }
+
+
+        const unitPrice =
+            calculatePrice(
+                min,
+                max,
+                complexity
+            );
+
+
+        const totalPrice =
+            unitPrice * Math.max(
+                quantity,
+                1
+            );
+
+
+        if (unitPriceInput) {
+            unitPriceInput.value =
+                unitPrice.toFixed(2);
+        }
+
+
+        if (totalPriceInput) {
+            totalPriceInput.value =
+                totalPrice.toFixed(2);
+        }
+
+
+        /*
+         * Show a readable price underneath
+         * the total when possible.
+         */
+
+        let display =
+            row.querySelector(
+                ".proposal-feature-price-display"
+            );
+
+
+        if (!display) {
+
+            display =
+                document.createElement(
+                    "div"
+                );
+
+            display.className =
+                "proposal-feature-price-display";
+
+            display.style.marginTop =
+                "4px";
+
+            display.style.fontWeight =
+                "600";
+
+            if (totalPriceInput) {
+
+                totalPriceInput.parentNode.appendChild(
+                    display
+                );
+            }
+        }
+
+
+        display.textContent =
+            "Total: " +
+            formatCurrency(
+                totalPrice
+            );
+    }
+
+
+    function updateAllRows() {
+
+        getFeatureRows().forEach(
+            function (row) {
+                updateRow(row);
+            }
+        );
+    }
+
+
+    function attachListeners(row) {
+
+        const featureSelect =
+            row.querySelector(
+                'select[name$="-feature_key"]'
+            );
+
+        const complexitySelect =
+            row.querySelector(
+                'select[name$="-complexity"]'
+            );
+
+        const quantityInput =
+            row.querySelector(
+                'input[name$="-quantity"]'
+            );
+
+
+        if (featureSelect) {
+
+            featureSelect.addEventListener(
+                "change",
+                function () {
+                    updateRow(row);
+                }
+            );
+        }
+
+
+        if (complexitySelect) {
+
+            complexitySelect.addEventListener(
+                "change",
+                function () {
+                    updateRow(row);
+                }
+            );
+        }
+
+
+        if (quantityInput) {
+
+            quantityInput.addEventListener(
+                "input",
+                function () {
+                    updateRow(row);
+                }
+            );
+        }
+    }
+
+
+    function initialise() {
+
+        getFeatureRows().forEach(
+            function (row) {
+
+                attachListeners(row);
+
+                updateRow(row);
+            }
+        );
+    }
+
+
+    document.addEventListener(
+        "DOMContentLoaded",
+        initialise
+    );
+
+
+    /*
+     * Django admin adds new inline rows dynamically.
+     */
+
+    document.addEventListener(
+        "formset:added",
+        function (event) {
+
+            const row =
+                event.target;
+
+            if (
+                row &&
+                row.classList &&
+                row.classList.contains(
+                    "dynamic-proposalfeature_set"
+                )
+            ) {
+
+                attachListeners(row);
+
+                updateRow(row);
+            }
+        }
+    );
+
+})();
+

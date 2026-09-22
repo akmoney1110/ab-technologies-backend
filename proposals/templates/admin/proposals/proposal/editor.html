@@ -1,0 +1,799 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+
+<style>
+
+.proposal-editor {
+    max-width: 1400px;
+}
+
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+
+.editor-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn {
+    display: inline-block;
+    padding: 9px 15px;
+    border-radius: 5px;
+    text-decoration: none;
+    border: 0;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.btn-primary {
+    background: #417690;
+    color: white;
+}
+
+.btn-success {
+    background: #198754;
+    color: white;
+}
+
+.btn-danger {
+    background: #ba2121;
+    color: white;
+}
+
+.btn-secondary {
+    background: #666;
+    color: white;
+}
+
+.section {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-bottom: 25px;
+    overflow: hidden;
+}
+
+.section-header {
+    padding: 15px 20px;
+    background: #f8f8f8;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.section-header h2 {
+    margin: 0;
+}
+
+.section-body {
+    padding: 20px;
+}
+
+.proposal-info {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+}
+
+.info-card {
+    padding: 18px;
+    border: 1px solid #ddd;
+    border-radius: 7px;
+}
+
+.info-label {
+    font-size: 12px;
+    color: #777;
+    text-transform: uppercase;
+}
+
+.info-value {
+    font-size: 20px;
+    font-weight: bold;
+    margin-top: 5px;
+}
+
+.feature-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.feature-card {
+    border: 1px solid #ddd;
+    border-radius: 7px;
+    padding: 15px;
+    background: #fff;
+}
+
+.feature-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.feature-name {
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.feature-description {
+    margin-top: 8px;
+    color: #666;
+}
+
+.feature-meta {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.badge {
+    padding: 4px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    background: #eee;
+}
+
+.badge-confirmed {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+
+.badge-recommended {
+    background: #cff4fc;
+    color: #055160;
+}
+
+.badge-optional {
+    background: #fff3cd;
+    color: #664d03;
+}
+
+.badge-future {
+    background: #e2e3e5;
+    color: #41464b;
+}
+
+.feature-price {
+    margin-top: 12px;
+    font-weight: bold;
+}
+
+.feature-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 15px;
+}
+
+.requirement-card,
+.screen-card {
+    border: 1px solid #ddd;
+    border-radius: 7px;
+    padding: 15px;
+    margin-bottom: 12px;
+}
+
+.add-form {
+    background: #f8f8f8;
+    padding: 20px;
+    border-radius: 7px;
+    margin-bottom: 20px;
+}
+
+.form-row {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.price-box {
+    font-size: 30px;
+    font-weight: bold;
+}
+
+#price-update {
+    transition: 0.2s;
+}
+
+</style>
+
+{% endblock %}
+
+
+{% block content %}
+
+<div class="proposal-editor">
+
+    <div class="editor-header">
+
+        <div>
+
+            <h1>
+                {{ proposal.title }}
+            </h1>
+
+            <p>
+                Proposal v{{ proposal.version }}
+            </p>
+
+        </div>
+
+        <div class="editor-actions">
+
+            <a
+                href="{% url 'admin:proposals_proposal_change' proposal.pk %}"
+                class="btn btn-secondary"
+            >
+                ← Admin
+            </a>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- PROPOSAL SUMMARY -->
+    <!-- ================================================= -->
+
+    <div class="section">
+
+        <div class="section-header">
+
+            <h2>Proposal Summary</h2>
+
+        </div>
+
+        <div class="section-body">
+
+            <div class="proposal-info">
+
+                <div class="info-card">
+
+                    <div class="info-label">
+                        Status
+                    </div>
+
+                    <div class="info-value">
+                        {{ proposal.get_status_display }}
+                    </div>
+
+                </div>
+
+
+                <div class="info-card">
+
+                    <div class="info-label">
+                        Version
+                    </div>
+
+                    <div class="info-value">
+                        v{{ proposal.version }}
+                    </div>
+
+                </div>
+
+
+                <div class="info-card">
+
+                    <div class="info-label">
+                        Features
+                    </div>
+
+                    <div class="info-value">
+                        {{ features|length }}
+                    </div>
+
+                </div>
+
+
+                <div class="info-card">
+
+                    <div class="info-label">
+                        Current Price
+                    </div>
+
+                    <div
+                        class="info-value"
+                        id="price-update"
+                    >
+                        {{ proposal.formatted_price }}
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- BASIC INFORMATION -->
+    <!-- ================================================= -->
+
+    <div class="section">
+
+        <div class="section-header">
+
+            <h2>Basic Information</h2>
+
+        </div>
+
+        <div class="section-body">
+
+            <form method="post">
+
+                {% csrf_token %}
+
+                <input
+                    type="hidden"
+                    name="action"
+                    value="save_proposal"
+                >
+
+                <div>
+
+                    <label>
+                        Title
+                    </label>
+
+                    <input
+                        type="text"
+                        name="title"
+                        value="{{ proposal.title }}"
+                        style="width:100%; padding:10px;"
+                    >
+
+                </div>
+
+                <br>
+
+                <div>
+
+                    <label>
+                        Client Summary
+                    </label>
+
+                    <textarea
+                        name="client_summary"
+                        rows="5"
+                        style="width:100%;"
+                    >{{ proposal.client_summary }}</textarea>
+
+                </div>
+
+                <br>
+
+                <div>
+
+                    <label>
+                        Executive Summary
+                    </label>
+
+                    <textarea
+                        name="executive_summary"
+                        rows="6"
+                        style="width:100%;"
+                    >{{ proposal.executive_summary }}</textarea>
+
+                </div>
+
+                <br>
+
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                >
+                    Save Proposal
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- REQUIREMENTS -->
+    <!-- ================================================= -->
+
+    <div class="section">
+
+        <div class="section-header">
+
+            <h2>
+                Requirements
+                ({{ requirements|length }})
+            </h2>
+
+        </div>
+
+        <div class="section-body">
+
+            {% for requirement in requirements %}
+
+                <div class="requirement-card">
+
+                    <div class="feature-top">
+
+                        <div>
+
+                            <strong>
+                                {{ requirement.title }}
+                            </strong>
+
+                            <p>
+                                {{ requirement.description }}
+                            </p>
+
+                        </div>
+
+                        <span class="badge">
+                            {{ requirement.get_requirement_type_display }}
+                        </span>
+
+                    </div>
+
+                    <div class="feature-actions">
+
+                        <a
+                            href="{% url 'admin:proposals_proposal_edit_requirement' proposal.pk requirement.pk %}"
+                            class="btn btn-primary"
+                        >
+                            Edit
+                        </a>
+
+                    </div>
+
+                </div>
+
+            {% empty %}
+
+                <p>
+                    No requirements yet.
+                </p>
+
+            {% endfor %}
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- FEATURES -->
+    <!-- ================================================= -->
+
+    <div class="section">
+
+        <div class="section-header">
+
+            <h2>
+                Features
+                ({{ features|length }})
+            </h2>
+
+        </div>
+
+        <div class="section-body">
+
+
+            <!-- ADD FEATURE -->
+
+            <div class="add-form">
+
+                <h3>
+                    Add Feature
+                </h3>
+
+                <form
+                    method="post"
+                    action="{% url 'admin:proposals_proposal_add_feature' proposal.pk %}"
+                >
+
+                    {% csrf_token %}
+
+                    {{ add_feature_form.as_p }}
+
+                    <button
+                        type="submit"
+                        class="btn btn-success"
+                    >
+                        + Add Feature
+                    </button>
+
+                </form>
+
+            </div>
+
+
+            <!-- FEATURE LIST -->
+
+            <div class="feature-list">
+
+                {% for feature in features %}
+
+                    <div
+                        class="feature-card"
+                        id="feature-{{ feature.pk }}"
+                    >
+
+                        <div class="feature-top">
+
+                            <div>
+
+                                <div class="feature-name">
+                                    {{ feature.name }}
+                                </div>
+
+                                <div class="feature-description">
+                                    {{ feature.description }}
+                                </div>
+
+                            </div>
+
+
+                            <span
+                                class="badge
+                                {% if feature.status == 'confirmed' %}
+                                    badge-confirmed
+                                {% elif feature.status == 'recommended' %}
+                                    badge-recommended
+                                {% elif feature.status == 'optional' %}
+                                    badge-optional
+                                {% elif feature.status == 'future' %}
+                                    badge-future
+                                {% endif %}
+                                "
+                            >
+                                {{ feature.get_status_display }}
+                            </span>
+
+                        </div>
+
+
+                        <div class="feature-meta">
+
+                            <span class="badge">
+                                {{ feature.category }}
+                            </span>
+
+                            <span class="badge">
+                                {{ feature.get_complexity_display }}
+                            </span>
+
+                            <span class="badge">
+                                Qty: {{ feature.quantity }}
+                            </span>
+
+                            <span class="badge">
+                                {{ feature.feature_key }}
+                            </span>
+
+                        </div>
+
+
+                        <div class="feature-price">
+
+                            {{ proposal.currency }}
+                            {{ feature.total_price|floatformat:2 }}
+
+                            {% if feature.status == "optional" %}
+                                <span>
+                                    — not included
+                                </span>
+                            {% endif %}
+
+                        </div>
+
+
+                        <div class="feature-actions">
+
+                            <a
+                                href="{% url 'admin:proposals_proposal_edit_feature' proposal.pk feature.pk %}"
+                                class="btn btn-primary"
+                            >
+                                Edit
+                            </a>
+
+
+                            {% if feature.status == "recommended" %}
+
+                                <button
+                                    type="button"
+                                    class="btn btn-danger toggle-feature"
+                                    data-feature-id="{{ feature.pk }}"
+                                >
+                                    Move to Optional
+                                </button>
+
+                            {% elif feature.status == "optional" %}
+
+                                <button
+                                    type="button"
+                                    class="btn btn-success toggle-feature"
+                                    data-feature-id="{{ feature.pk }}"
+                                >
+                                    Add to Proposal
+                                </button>
+
+                            {% elif feature.status == "confirmed" %}
+
+                                <span class="badge">
+                                    Confirmed — always included
+                                </span>
+
+                            {% else %}
+
+                                <button
+                                    type="button"
+                                    class="btn btn-success toggle-feature"
+                                    data-feature-id="{{ feature.pk }}"
+                                >
+                                    Add to Proposal
+                                </button>
+
+                            {% endif %}
+
+                        </div>
+
+                    </div>
+
+                {% empty %}
+
+                    <p>
+                        No features have been added yet.
+                    </p>
+
+                {% endfor %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- SCREENS -->
+    <!-- ================================================= -->
+
+    <div class="section">
+
+        <div class="section-header">
+
+            <h2>
+                Pages & Screens
+                ({{ screens|length }})
+            </h2>
+
+        </div>
+
+        <div class="section-body">
+
+            {% for screen in screens %}
+
+                <div class="screen-card">
+
+                    <strong>
+                        {{ screen.name }}
+                    </strong>
+
+                    <p>
+                        {{ screen.purpose }}
+                    </p>
+
+                    {% if screen.user_type %}
+
+                        <span class="badge">
+                            {{ screen.user_type }}
+                        </span>
+
+                    {% endif %}
+
+                    <div class="feature-actions">
+
+                        <a
+                            href="{% url 'admin:proposals_proposal_edit_screen' proposal.pk screen.pk %}"
+                            class="btn btn-primary"
+                        >
+                            Edit Screen
+                        </a>
+
+                    </div>
+
+                </div>
+
+            {% empty %}
+
+                <p>
+                    No screens defined.
+                </p>
+
+            {% endfor %}
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+document.querySelectorAll(
+    ".toggle-feature"
+).forEach(function(button) {
+
+    button.addEventListener(
+        "click",
+        async function() {
+
+            const featureId =
+                this.dataset.featureId;
+
+            const url =
+                "{% url 'admin:proposals_proposal_toggle_feature' proposal.pk 0 %}"
+                .replace(
+                    "/0/",
+                    "/" + featureId + "/toggle/"
+                );
+
+            const csrfToken =
+                document.querySelector(
+                    "[name=csrfmiddlewaretoken]"
+                ).value;
+
+            const response =
+                await fetch(
+                    url,
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "X-CSRFToken": csrfToken,
+                            "X-Requested-With": "XMLHttpRequest",
+                        }
+                    }
+                );
+
+            const data =
+                await response.json();
+
+            if (!data.success) {
+
+                alert(
+                    data.error ||
+                    "Unable to update feature."
+                );
+
+                return;
+            }
+
+            document
+                .getElementById("price-update")
+                .innerText =
+                data.formatted_price;
+
+            window.location.reload();
+
+        }
+    );
+
+});
+
+</script>
+
+{% endblock %}

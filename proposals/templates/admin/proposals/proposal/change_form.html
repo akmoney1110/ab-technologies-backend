@@ -1,0 +1,18 @@
+```django
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+    {% if original %}
+        <li>
+        <a href="{% url 'admin:proposals_proposal_review' original.pk %}">
+                👁 Review Proposal
+            </a>
+            <a href="{% url 'admin:proposals_proposal_recalculate' original.pk %}">
+                Recalculate Pricing
+            </a>
+        </li>
+    {% endif %}
+
+    {{ block.super }}
+{% endblock %}
+

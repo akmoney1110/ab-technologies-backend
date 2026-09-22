@@ -1,0 +1,252 @@
+
+{% extends "admin/change_form.html" %}
+
+{% load i18n admin_urls static admin_modify %}
+
+
+{% block extrastyle %}
+    {{ block.super }}
+
+    <style>
+        /*
+         * ============================================================
+         * QUOTE REQUEST - GENERATE PROPOSAL BUTTON
+         * ============================================================
+         */
+
+        .quote-generate-proposal-row {
+            margin-top: 12px !important;
+            padding: 14px 16px !important;
+
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .quote-generate-proposal-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+
+            min-height: 38px;
+            padding: 9px 18px;
+
+            border: 1px solid #2563eb;
+            border-radius: 6px;
+
+            background: #2563eb;
+            color: #ffffff;
+
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.4;
+
+            text-decoration: none;
+            cursor: pointer;
+
+            box-shadow:
+                0 1px 2px rgba(0, 0, 0, 0.05);
+
+            transition:
+                background 0.15s ease,
+                border-color 0.15s ease,
+                box-shadow 0.15s ease,
+                transform 0.05s ease;
+        }
+
+        .quote-generate-proposal-button:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            color: #ffffff;
+
+            box-shadow:
+                0 2px 5px rgba(0, 0, 0, 0.10);
+        }
+
+        .quote-generate-proposal-button:active {
+            transform: translateY(1px);
+            box-shadow: none;
+        }
+
+        .quote-generate-proposal-button:focus {
+            outline: none;
+
+            box-shadow:
+                0 0 0 3px rgba(37, 99, 235, 0.20);
+        }
+
+        .quote-generate-proposal-button svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        /*
+         * ============================================================
+         * STATUS INFORMATION
+         * ============================================================
+         */
+
+        .quote-generate-proposal-info {
+            margin-right: auto;
+
+            display: flex;
+            align-items: center;
+            gap: 8px;
+
+            color: #6b7280;
+
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .quote-generate-proposal-info strong {
+            color: #374151;
+        }
+
+        .quote-generate-proposal-status {
+            display: inline-flex;
+            align-items: center;
+
+            padding: 3px 8px;
+
+            border-radius: 999px;
+
+            background: #dbeafe;
+            color: #1d4ed8;
+
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        /*
+         * ============================================================
+         * DISABLED / NOT PRICED MESSAGE
+         * ============================================================
+         */
+
+        .quote-generate-proposal-not-ready {
+            margin-top: 12px !important;
+            padding: 12px 14px !important;
+
+            border: 1px solid #fde68a;
+            border-radius: 6px;
+
+            background: #fffbeb;
+            color: #92400e;
+
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .quote-generate-proposal-not-ready strong {
+            color: #78350f;
+        }
+
+        /*
+         * ============================================================
+         * MOBILE
+         * ============================================================
+         */
+
+        @media (max-width: 767px) {
+
+            .quote-generate-proposal-row {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .quote-generate-proposal-info {
+                margin-right: 0;
+            }
+
+            .quote-generate-proposal-button {
+                width: 100%;
+            }
+        }
+    </style>
+{% endblock %}
+
+
+{% block submit_buttons_bottom %}
+    {{ block.super }}
+
+    {% if original %}
+
+        {% if original.status == "priced" %}
+
+            <div class="submit-row quote-generate-proposal-row">
+
+                <div class="quote-generate-proposal-info">
+
+                    <span>
+                        <strong>Quotation ready:</strong>
+                        all items have been priced.
+                    </span>
+
+                    <span class="quote-generate-proposal-status">
+                        Priced
+                    </span>
+
+                </div>
+
+                <button
+                    type="submit"
+                    name="_generate_proposal"
+                    value="1"
+                    class="quote-generate-proposal-button"
+                    onclick="
+                        return confirm(
+                            'Generate a proposal from this quotation?\\n\\n' +
+                            'The current quotation pricing will be used as the financial source of truth.'
+                        );
+                    "
+                >
+
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M12 3v12"></path>
+                        <path d="m7 10 5 5 5-5"></path>
+                        <path d="M5 21h14"></path>
+                    </svg>
+
+                    {% trans "Generate Proposal" %}
+
+                </button>
+
+            </div>
+
+        {% elif original.status == "draft" %}
+
+            <div class="quote-generate-proposal-not-ready">
+
+                <strong>Proposal generation unavailable.</strong>
+
+                The quotation must be fully priced before a proposal
+                can be generated.
+
+            </div>
+
+        {% endif %}
+
+    {% endif %}
+
+{% endblock %}
+
+
+{% block submit_buttons_top %}
+    {{ block.super }}
+{% endblock %}
+

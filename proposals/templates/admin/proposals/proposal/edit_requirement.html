@@ -1,0 +1,40 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+
+<h1>
+    Edit Requirement
+</h1>
+
+<p>
+    Proposal:
+    <strong>{{ proposal.title }}</strong>
+</p>
+
+<form method="post">
+
+    {% csrf_token %}
+
+    {{ form.as_p }}
+
+    <div style="margin-top:20px;">
+
+        <button
+            type="submit"
+            class="button default"
+        >
+            Save Requirement
+        </button>
+
+        <a
+            href="{% url 'admin:proposals_proposal_edit' proposal.pk %}"
+            class="button"
+        >
+            Cancel
+        </a>
+
+    </div>
+
+</form>
+
+{% endblock %}

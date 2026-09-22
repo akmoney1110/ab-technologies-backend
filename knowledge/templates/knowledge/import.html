@@ -1,0 +1,67 @@
+
+
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo;
+    <a href="{% url 'admin:app_list' app_label='knowledge' %}">Knowledge</a>
+    &rsaquo;
+    Knowledge Importer
+</div>
+
+
+<div id="content-main">
+<h1>Knowledge Importer</h1>
+<p>
+    Upload or paste your AB Technologies knowledge data.
+    The importer will automatically place records into the appropriate
+    Knowledge Article, Service, Product, or Training Course table.
+</p>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <div class="errornote">
+            {{ form.non_field_errors }}
+        </div>
+    {% endif %}
+    <fieldset class="module aligned">
+        <div class="form-row">
+            {{ form.file.errors }}
+            <div>
+                {{ form.file.label_tag }}
+                {{ form.file }}
+                {% if form.file.help_text %}
+                    <div class="help">{{ form.file.help_text }}</div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="form-row">
+            {{ form.content_type.errors }}
+            <div>
+                {{ form.content_type.label_tag }}
+                {{ form.content_type }}
+                {% if form.content_type.help_text %}
+                    <div class="help">{{ form.content_type.help_text }}</div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="form-row">
+            {{ form.pasted_content.errors }}
+            <div>
+                {{ form.pasted_content.label_tag }}
+                {{ form.pasted_content }}
+                {% if form.pasted_content.help_text %}
+                    <div class="help">{{ form.pasted_content.help_text }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </fieldset>
+    <div class="submit-row">
+        <input
+            type="submit"
+            value="Import Knowledge"
+            class="default"
+        >
+    </div>
+</form>
+</div>
+

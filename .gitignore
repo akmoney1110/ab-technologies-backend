@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+env./
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Django database
+db.sqlite3
+*.sqlite3
+*.sqlite3-journal
+
+# Django generated static files
+staticfiles/
+
+# User-uploaded media
+media/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Testing / cache
+.pytest_cache/
+.coverage
+htmlcov/

@@ -1,0 +1,3922 @@
+{% extends "admin/base_site.html" %}
+
+{% load humanize %}
+
+{% block title %}
+Review Proposal — {{ proposal.title }}
+{% endblock %}
+
+{% block extrastyle %}
+
+<style>
+
+    /* =========================================================
+       DESIGN TOKENS
+    ========================================================= */
+
+    :root {
+        --review-bg: #f4f7fb;
+        --review-card: #ffffff;
+        --review-border: #e4e9f0;
+        --review-border-dark: #d0d5dd;
+
+        --review-text: #172033;
+        --review-text-soft: #344054;
+        --review-muted: #667085;
+        --review-muted-light: #98a2b3;
+
+        --review-primary: #2563eb;
+        --review-primary-dark: #1d4ed8;
+        --review-primary-soft: #eff6ff;
+
+        --review-success: #16a34a;
+        --review-success-dark: #15803d;
+        --review-success-soft: #dcfce7;
+
+        --review-warning: #d97706;
+        --review-warning-soft: #fef3c7;
+
+        --review-danger: #dc2626;
+        --review-danger-soft: #fee2e2;
+
+        --review-purple: #7c3aed;
+        --review-purple-soft: #ede9fe;
+
+        --review-info: #0284c7;
+        --review-info-soft: #e0f2fe;
+
+        --review-shadow:
+            0 4px 18px rgba(15, 23, 42, 0.06);
+
+        --review-shadow-lg:
+            0 14px 40px rgba(15, 23, 42, 0.12);
+    }
+
+
+    /* =========================================================
+       PAGE
+    ========================================================= */
+
+    .proposal-review {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 28px;
+        color: var(--review-text);
+    }
+
+
+    /* =========================================================
+       HERO
+    ========================================================= */
+
+    .proposal-hero {
+        position: relative;
+
+        background:
+            radial-gradient(
+                circle at 90% 10%,
+                rgba(59, 130, 246, 0.22),
+                transparent 30%
+            ),
+            linear-gradient(
+                135deg,
+                #0f172a 0%,
+                #172554 55%,
+                #1e3a8a 100%
+            );
+
+        color: #fff;
+
+        border-radius: 20px;
+
+        padding: 30px;
+
+        margin-bottom: 24px;
+
+        box-shadow:
+            0 12px 35px rgba(15, 23, 42, 0.16);
+
+        overflow: hidden;
+    }
+
+
+    .proposal-hero::after {
+        content: "";
+
+        position: absolute;
+
+        width: 220px;
+        height: 220px;
+
+        right: -90px;
+        bottom: -120px;
+
+        border-radius: 50%;
+
+        background: rgba(255,255,255,.04);
+    }
+
+
+    .proposal-hero-top {
+        position: relative;
+        z-index: 2;
+
+        display: flex;
+
+        justify-content: space-between;
+
+        gap: 30px;
+
+        align-items: flex-start;
+    }
+
+
+    .proposal-hero h1 {
+        margin: 0 0 12px;
+
+        font-size: 30px;
+
+        line-height: 1.2;
+
+        font-weight: 750;
+
+        letter-spacing: -0.5px;
+    }
+
+
+    .proposal-subtitle {
+        color: rgba(255,255,255,.72);
+
+        font-size: 14px;
+
+        line-height: 1.6;
+
+        max-width: 720px;
+    }
+
+
+    .proposal-meta-row {
+        display: flex;
+
+        flex-wrap: wrap;
+
+        gap: 10px;
+
+        margin-top: 20px;
+    }
+
+
+    .meta-pill {
+        display: inline-flex;
+
+        align-items: center;
+
+        gap: 6px;
+
+        padding: 7px 11px;
+
+        border-radius: 999px;
+
+        background: rgba(255,255,255,.10);
+
+        border: 1px solid rgba(255,255,255,.12);
+
+        color: rgba(255,255,255,.9);
+
+        font-size: 12px;
+    }
+
+
+    .meta-pill strong {
+        color: #fff;
+    }
+
+
+    /* =========================================================
+       HERO REFERENCE
+    ========================================================= */
+
+    .proposal-reference {
+        display: inline-flex;
+
+        align-items: center;
+
+        gap: 8px;
+
+        margin-top: 18px;
+
+        padding: 8px 12px;
+
+        border-radius: 9px;
+
+        background: rgba(255,255,255,.08);
+
+        border: 1px solid rgba(255,255,255,.10);
+
+        color: rgba(255,255,255,.8);
+
+        font-size: 11px;
+    }
+
+
+    .proposal-reference strong {
+        color: #fff;
+    }
+
+
+    /* =========================================================
+       ACTIONS
+    ========================================================= */
+
+    .proposal-actions {
+        position: relative;
+        z-index: 3;
+
+        display: flex;
+
+        flex-wrap: wrap;
+
+        justify-content: flex-end;
+
+        gap: 8px;
+
+        min-width: 300px;
+
+        max-width: 470px;
+    }
+
+
+    .review-btn {
+        display: inline-flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        gap: 7px;
+
+        padding: 10px 15px;
+
+        border-radius: 9px;
+
+        border: 1px solid rgba(255,255,255,.18);
+
+        background: rgba(255,255,255,.10);
+
+        color: #fff;
+
+        text-decoration: none;
+
+        font-size: 13px;
+
+        font-weight: 650;
+
+        transition:
+            background .18s ease,
+            transform .18s ease,
+            box-shadow .18s ease;
+    }
+
+
+    .review-btn:hover {
+        background: rgba(255,255,255,.18);
+
+        color: #fff;
+
+        text-decoration: none;
+
+        transform: translateY(-1px);
+    }
+
+
+    .review-btn-primary {
+        background: #fff;
+
+        color: #172033;
+
+        border-color: #fff;
+    }
+
+
+    .review-btn-primary:hover {
+        background: #f8fafc;
+
+        color: #172033;
+
+        box-shadow:
+            0 6px 18px rgba(0,0,0,.12);
+    }
+
+
+    .review-btn-success {
+        background: var(--review-success);
+
+        border-color: var(--review-success);
+
+        color: #fff;
+    }
+
+
+    .review-btn-success:hover {
+        background: var(--review-success-dark);
+
+        border-color: var(--review-success-dark);
+
+        color: #fff;
+    }
+
+
+    .review-btn-purple {
+        background: var(--review-purple);
+
+        border-color: var(--review-purple);
+
+        color: #fff;
+    }
+
+
+    .review-btn-purple:hover {
+        background: #6d28d9;
+
+        border-color: #6d28d9;
+
+        color: #fff;
+    }
+
+
+    /* =========================================================
+       STATUS
+    ========================================================= */
+
+    .status-badge {
+        display: inline-flex;
+
+        align-items: center;
+
+        gap: 5px;
+
+        padding: 6px 11px;
+
+        border-radius: 999px;
+
+        font-size: 11px;
+
+        font-weight: 750;
+
+        text-transform: uppercase;
+
+        letter-spacing: .4px;
+    }
+
+
+    .status-draft {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+
+    .status-ready {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+
+    .status-sent {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+
+    .status-viewed {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
+
+    .status-accepted {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+
+    .status-rejected,
+    .status-cancelled {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+
+    .status-revision_requested {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+
+    /* =========================================================
+       SECTION
+    ========================================================= */
+
+    .review-section {
+        background: var(--review-card);
+
+        border: 1px solid var(--review-border);
+
+        border-radius: 15px;
+
+        margin-bottom: 22px;
+
+        box-shadow: var(--review-shadow);
+
+        overflow: hidden;
+    }
+
+
+    .section-heading {
+        display: flex;
+
+        justify-content: space-between;
+
+        align-items: center;
+
+        gap: 15px;
+
+        padding: 17px 20px;
+
+        border-bottom: 1px solid var(--review-border);
+
+        background: #fbfcfe;
+    }
+
+
+    .section-heading h2 {
+        margin: 0;
+
+        font-size: 16px;
+
+        font-weight: 750;
+
+        color: #172033;
+    }
+
+
+    .section-heading p {
+        margin: 4px 0 0;
+
+        color: var(--review-muted);
+
+        font-size: 12px;
+
+        line-height: 1.5;
+    }
+
+
+    .section-body {
+        padding: 22px;
+    }
+
+
+    /* =========================================================
+       SECTION ICON
+    ========================================================= */
+
+    .section-heading-left {
+        display: flex;
+
+        align-items: center;
+
+        gap: 11px;
+    }
+
+
+    .section-icon {
+        width: 34px;
+
+        height: 34px;
+
+        display: inline-flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        border-radius: 9px;
+
+        background: var(--review-primary-soft);
+
+        color: var(--review-primary);
+
+        font-size: 15px;
+
+        flex: 0 0 auto;
+    }
+
+
+    /* =========================================================
+       PRICING
+    ========================================================= */
+
+    .pricing-grid {
+        display: grid;
+
+        grid-template-columns:
+            repeat(4, minmax(0, 1fr));
+
+        gap: 14px;
+    }
+
+
+    .pricing-card {
+        padding: 20px;
+
+        border-radius: 13px;
+
+        background: #f8fafc;
+
+        border: 1px solid var(--review-border);
+
+        transition:
+            transform .18s ease,
+            box-shadow .18s ease;
+    }
+
+
+    .pricing-card:hover {
+        transform: translateY(-2px);
+
+        box-shadow:
+            0 8px 20px rgba(15, 23, 42, .06);
+    }
+
+
+    .pricing-card.confirmed {
+        border-left: 4px solid var(--review-success);
+    }
+
+
+    .pricing-card.recommended {
+        border-left: 4px solid var(--review-primary);
+    }
+
+
+    .pricing-card.optional {
+        border-left: 4px solid var(--review-warning);
+    }
+
+
+    .pricing-card.total {
+        background:
+            linear-gradient(
+                135deg,
+                #eff6ff,
+                #dbeafe
+            );
+
+        border-color: #bfdbfe;
+
+        border-left: 4px solid var(--review-primary);
+    }
+
+
+    .pricing-label {
+        color: var(--review-muted);
+
+        font-size: 11px;
+
+        font-weight: 700;
+
+        text-transform: uppercase;
+
+        letter-spacing: .6px;
+
+        margin-bottom: 8px;
+    }
+
+
+    .pricing-value {
+        font-size: 22px;
+
+        font-weight: 800;
+
+        letter-spacing: -.3px;
+    }
+
+
+    .pricing-card.total .pricing-value {
+        font-size: 28px;
+
+        color: #1d4ed8;
+    }
+
+
+    .pricing-note {
+        margin-top: 7px;
+
+        font-size: 11px;
+
+        color: var(--review-muted);
+    }
+
+
+    /* =========================================================
+       PROCUREMENT SUMMARY
+    ========================================================= */
+
+    .procurement-panel {
+        position: relative;
+
+        border: 1px solid #bbf7d0;
+
+        border-radius: 15px;
+
+        margin-bottom: 22px;
+
+        overflow: hidden;
+
+        background:
+            linear-gradient(
+                135deg,
+                #f0fdf4 0%,
+                #ffffff 65%
+            );
+
+        box-shadow:
+            0 6px 22px rgba(22, 163, 74, .07);
+    }
+
+
+    .procurement-panel::before {
+        content: "";
+
+        position: absolute;
+
+        left: 0;
+        top: 0;
+        bottom: 0;
+
+        width: 4px;
+
+        background: var(--review-success);
+    }
+
+
+    .procurement-panel-header {
+        display: flex;
+
+        justify-content: space-between;
+
+        align-items: flex-start;
+
+        gap: 20px;
+
+        padding: 20px 22px;
+
+        border-bottom: 1px solid #dcfce7;
+    }
+
+
+    .procurement-panel-title {
+        display: flex;
+
+        align-items: center;
+
+        gap: 12px;
+    }
+
+
+    .procurement-icon {
+        width: 42px;
+
+        height: 42px;
+
+        display: inline-flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        border-radius: 11px;
+
+        background: #dcfce7;
+
+        color: #15803d;
+
+        font-size: 20px;
+    }
+
+
+    .procurement-panel-title h2 {
+        margin: 0;
+
+        font-size: 17px;
+
+        font-weight: 800;
+
+        color: #14532d;
+    }
+
+
+    .procurement-panel-title p {
+        margin: 4px 0 0;
+
+        color: #4b7a5b;
+
+        font-size: 12px;
+    }
+
+
+    .procurement-status {
+        display: inline-flex;
+
+        align-items: center;
+
+        gap: 6px;
+
+        padding: 7px 11px;
+
+        border-radius: 999px;
+
+        background: #dcfce7;
+
+        color: #166534;
+
+        font-size: 11px;
+
+        font-weight: 750;
+
+        text-transform: uppercase;
+
+        letter-spacing: .4px;
+    }
+
+
+    .procurement-panel-body {
+        padding: 20px 22px;
+    }
+
+
+    .procurement-summary-grid {
+        display: grid;
+
+        grid-template-columns:
+            repeat(4, minmax(0, 1fr));
+
+        gap: 12px;
+
+        margin-bottom: 16px;
+    }
+
+
+    .procurement-stat {
+        padding: 14px;
+
+        background: rgba(255,255,255,.78);
+
+        border: 1px solid #dcfce7;
+
+        border-radius: 11px;
+    }
+
+
+    .procurement-stat-label {
+        color: #66806f;
+
+        font-size: 10px;
+
+        font-weight: 750;
+
+        text-transform: uppercase;
+
+        letter-spacing: .5px;
+
+        margin-bottom: 6px;
+    }
+
+
+    .procurement-stat-value {
+        color: #14532d;
+
+        font-size: 18px;
+
+        font-weight: 800;
+    }
+
+
+    .procurement-stat-note {
+        margin-top: 4px;
+
+        color: #66806f;
+
+        font-size: 10px;
+    }
+
+
+    .procurement-notice {
+        display: flex;
+
+        align-items: flex-start;
+
+        gap: 9px;
+
+        padding: 12px 14px;
+
+        border-radius: 10px;
+
+        background: #fff;
+
+        border: 1px solid #dcfce7;
+
+        color: #3f6048;
+
+        font-size: 12px;
+
+        line-height: 1.6;
+    }
+
+
+    .procurement-actions {
+        display: flex;
+
+        justify-content: flex-end;
+
+        flex-wrap: wrap;
+
+        gap: 9px;
+
+        margin-top: 16px;
+    }
+
+
+    .procurement-action {
+        display: inline-flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        gap: 7px;
+
+        padding: 10px 15px;
+
+        border-radius: 9px;
+
+        text-decoration: none;
+
+        font-size: 12px;
+
+        font-weight: 750;
+
+        transition:
+            transform .18s ease,
+            background .18s ease;
+    }
+
+
+    .procurement-action-primary {
+        background: #16a34a;
+
+        border: 1px solid #16a34a;
+
+        color: #fff;
+    }
+
+
+    .procurement-action-primary:hover {
+        background: #15803d;
+
+        border-color: #15803d;
+
+        color: #fff;
+
+        text-decoration: none;
+
+        transform: translateY(-1px);
+    }
+
+
+    /* =========================================================
+       CONTENT GRID
+    ========================================================= */
+
+    .two-column {
+        display: grid;
+
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+
+        gap: 22px;
+    }
+
+
+    .full-width {
+        grid-column: 1 / -1;
+    }
+
+
+    /* =========================================================
+       TEXT
+    ========================================================= */
+
+    .readable-text {
+        color: #344054;
+
+        line-height: 1.75;
+
+        font-size: 14px;
+
+        white-space: pre-line;
+    }
+
+
+    .empty-state {
+        padding: 18px;
+
+        border: 1px dashed #d0d5dd;
+
+        border-radius: 10px;
+
+        color: #98a2b3;
+
+        text-align: center;
+
+        font-size: 13px;
+    }
+
+
+    /* =========================================================
+       LISTS
+    ========================================================= */
+
+    .clean-list {
+        display: grid;
+
+        gap: 9px;
+
+        margin: 0;
+
+        padding: 0;
+
+        list-style: none;
+    }
+
+
+    .clean-list li {
+        position: relative;
+
+        padding: 11px 13px 11px 35px;
+
+        background: #f8fafc;
+
+        border: 1px solid #edf0f5;
+
+        border-radius: 9px;
+
+        color: #344054;
+
+        font-size: 13px;
+
+        line-height: 1.55;
+    }
+
+
+    .clean-list li::before {
+        content: "✓";
+
+        position: absolute;
+
+        left: 13px;
+
+        top: 10px;
+
+        color: var(--review-success);
+
+        font-weight: 800;
+    }
+
+
+    .recommended-list li::before {
+        content: "★";
+
+        color: var(--review-primary);
+    }
+
+
+    .optional-list li::before {
+        content: "+";
+
+        color: var(--review-warning);
+    }
+
+
+    /* =========================================================
+       FEATURES
+    ========================================================= */
+
+    .feature-count {
+        display: inline-flex;
+
+        min-width: 28px;
+
+        height: 28px;
+
+        align-items: center;
+
+        justify-content: center;
+
+        border-radius: 8px;
+
+        background: #eff6ff;
+
+        color: #1d4ed8;
+
+        font-size: 12px;
+
+        font-weight: 750;
+    }
+
+
+    .feature-table-wrapper {
+        overflow-x: auto;
+    }
+
+
+    .feature-table {
+        width: 100%;
+
+        border-collapse: separate;
+
+        border-spacing: 0;
+
+        min-width: 1000px;
+    }
+
+
+    .feature-table th {
+        padding: 13px 12px;
+
+        background: #f8fafc;
+
+        border-bottom: 1px solid var(--review-border);
+
+        color: #667085;
+
+        font-size: 10px;
+
+        font-weight: 750;
+
+        text-transform: uppercase;
+
+        letter-spacing: .55px;
+
+        text-align: left;
+
+        white-space: nowrap;
+    }
+
+
+    .feature-table td {
+        padding: 15px 12px;
+
+        border-bottom: 1px solid #edf0f5;
+
+        vertical-align: top;
+
+        font-size: 12px;
+    }
+
+
+    .feature-table tbody tr:hover {
+        background: #fafcff;
+    }
+
+
+    .feature-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+
+    .feature-name {
+        font-size: 13px;
+
+        font-weight: 750;
+
+        color: #172033;
+
+        margin-bottom: 5px;
+    }
+
+
+    .feature-description {
+        max-width: 390px;
+
+        color: #667085;
+
+        font-size: 12px;
+
+        line-height: 1.55;
+    }
+
+
+    .feature-key {
+        margin-top: 7px;
+
+        font-family:
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            monospace;
+
+        color: #98a2b3;
+
+        font-size: 10px;
+    }
+
+
+    .price-cell {
+        white-space: nowrap;
+
+        font-weight: 650;
+    }
+
+
+    .price-total {
+        color: #172033;
+
+        font-weight: 800;
+    }
+
+
+    /* =========================================================
+       SCOPE BADGES
+    ========================================================= */
+
+    .scope-badge {
+        display: inline-flex;
+
+        padding: 5px 9px;
+
+        border-radius: 999px;
+
+        font-size: 10px;
+
+        font-weight: 750;
+
+        text-transform: uppercase;
+
+        letter-spacing: .3px;
+
+        white-space: nowrap;
+    }
+
+
+    .scope-confirmed {
+        background: #dcfce7;
+
+        color: #166534;
+    }
+
+
+    .scope-recommended {
+        background: #dbeafe;
+
+        color: #1d4ed8;
+    }
+
+
+    .scope-optional,
+    .scope-future {
+        background: #fef3c7;
+
+        color: #92400e;
+    }
+
+
+    .scope-removed,
+    .scope-rejected {
+        background: #fee2e2;
+
+        color: #991b1b;
+    }
+
+
+    .scope-pending {
+        background: #f2f4f7;
+
+        color: #475467;
+    }
+
+
+    /* =========================================================
+       SCREENS
+    ========================================================= */
+
+    .screen-list {
+        display: grid;
+
+        gap: 15px;
+    }
+
+
+    .screen-card {
+        border: 1px solid var(--review-border);
+
+        border-radius: 13px;
+
+        overflow: hidden;
+
+        background: #fff;
+    }
+
+
+    .screen-card-header {
+        display: flex;
+
+        justify-content: space-between;
+
+        align-items: flex-start;
+
+        gap: 15px;
+
+        padding: 16px 18px;
+
+        background:
+            linear-gradient(
+                90deg,
+                #f8fafc,
+                #ffffff
+            );
+
+        border-bottom: 1px solid var(--review-border);
+    }
+
+
+    .screen-name {
+        font-size: 15px;
+
+        font-weight: 750;
+
+        margin-bottom: 5px;
+    }
+
+
+    .screen-meta {
+        color: #667085;
+
+        font-size: 11px;
+    }
+
+
+    .screen-body {
+        padding: 18px;
+    }
+
+
+    .screen-purpose {
+        margin-bottom: 17px;
+
+        color: #475467;
+
+        line-height: 1.65;
+
+        font-size: 13px;
+    }
+
+
+    .screen-detail-grid {
+        display: grid;
+
+        grid-template-columns:
+            repeat(3, minmax(0, 1fr));
+
+        gap: 11px;
+    }
+
+
+    .screen-detail {
+        padding: 13px;
+
+        background: #f8fafc;
+
+        border: 1px solid #edf0f5;
+
+        border-radius: 9px;
+    }
+
+
+    .screen-detail-label {
+        display: block;
+
+        margin-bottom: 7px;
+
+        color: #667085;
+
+        font-size: 10px;
+
+        font-weight: 750;
+
+        text-transform: uppercase;
+
+        letter-spacing: .5px;
+    }
+
+
+    .structured-value {
+        margin: 0;
+
+        color: #344054;
+
+        font-family:
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            monospace;
+
+        font-size: 11px;
+
+        line-height: 1.6;
+
+        white-space: pre-wrap;
+
+        word-break: break-word;
+    }
+
+
+    /* =========================================================
+       TECHNICAL
+    ========================================================= */
+
+    .technical-grid {
+        display: grid;
+
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+
+        gap: 14px;
+    }
+
+
+    .technical-card {
+        border: 1px solid var(--review-border);
+
+        border-radius: 12px;
+
+        padding: 17px;
+
+        background: #fff;
+    }
+
+
+    .technical-card-title {
+        display: flex;
+
+        align-items: center;
+
+        gap: 8px;
+
+        margin-bottom: 12px;
+
+        font-size: 13px;
+
+        font-weight: 750;
+    }
+
+
+    .technical-icon {
+        width: 28px;
+
+        height: 28px;
+
+        display: inline-flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        border-radius: 8px;
+
+        background: #eff6ff;
+
+        color: #2563eb;
+
+        font-size: 12px;
+    }
+
+
+    /* =========================================================
+       MILESTONES
+    ========================================================= */
+
+    .milestones {
+        display: grid;
+
+        gap: 0;
+    }
+
+
+    .milestone {
+        display: flex;
+
+        gap: 15px;
+
+        padding: 15px 0;
+
+        border-bottom: 1px solid #edf0f5;
+    }
+
+
+    .milestone:last-child {
+        border-bottom: 0;
+    }
+
+
+    .milestone-number {
+        flex: 0 0 34px;
+
+        width: 34px;
+
+        height: 34px;
+
+        display: flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        border-radius: 50%;
+
+        background: #eff6ff;
+
+        color: #2563eb;
+
+        font-size: 12px;
+
+        font-weight: 800;
+    }
+
+
+    .milestone-title {
+        font-size: 13px;
+
+        font-weight: 750;
+
+        margin-bottom: 4px;
+    }
+
+
+    .milestone-description {
+        color: #667085;
+
+        font-size: 12px;
+
+        line-height: 1.55;
+    }
+
+
+    /* =========================================================
+       AI
+    ========================================================= */
+
+    .ai-warning {
+        display: flex;
+
+        gap: 10px;
+
+        padding: 12px 14px;
+
+        margin-bottom: 15px;
+
+        border-radius: 9px;
+
+        background: #fffbeb;
+
+        border: 1px solid #fde68a;
+
+        color: #92400e;
+
+        font-size: 12px;
+
+        line-height: 1.55;
+    }
+
+
+    .ai-content {
+        background: #0f172a;
+
+        color: #dbeafe;
+
+        border-radius: 11px;
+
+        padding: 18px;
+
+        overflow-x: auto;
+    }
+
+
+    .ai-content pre {
+        margin: 0;
+
+        white-space: pre-wrap;
+
+        word-break: break-word;
+
+        font-family:
+            ui-monospace,
+            SFMono-Regular,
+            Menlo,
+            Monaco,
+            Consolas,
+            monospace;
+
+        font-size: 11px;
+
+        line-height: 1.7;
+    }
+
+
+    /* =========================================================
+       BOTTOM ACTIONS
+    ========================================================= */
+
+    .bottom-actions {
+        display: flex;
+
+        justify-content: flex-end;
+
+        flex-wrap: wrap;
+
+        gap: 9px;
+
+        padding: 4px 0 25px;
+    }
+
+
+    .bottom-btn {
+        display: inline-flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        gap: 7px;
+
+        padding: 10px 15px;
+
+        border-radius: 9px;
+
+        border: 1px solid #d0d5dd;
+
+        background: #fff;
+
+        color: #344054;
+
+        text-decoration: none;
+
+        font-size: 12px;
+
+        font-weight: 700;
+
+        transition:
+            background .18s ease,
+            transform .18s ease;
+    }
+
+
+    .bottom-btn:hover {
+        background: #f8fafc;
+
+        color: #172033;
+
+        text-decoration: none;
+
+        transform: translateY(-1px);
+    }
+
+
+    .bottom-btn-primary {
+        background: #2563eb;
+
+        color: #fff;
+
+        border-color: #2563eb;
+    }
+
+
+    .bottom-btn-primary:hover {
+        background: #1d4ed8;
+
+        color: #fff;
+    }
+
+
+    .bottom-btn-success {
+        background: #16a34a;
+
+        color: #fff;
+
+        border-color: #16a34a;
+    }
+
+
+    .bottom-btn-success:hover {
+        background: #15803d;
+
+        color: #fff;
+    }
+
+
+    /* =========================================================
+       RESPONSIVE
+    ========================================================= */
+
+    @media (max-width: 1250px) {
+
+        .pricing-grid,
+        .procurement-summary-grid {
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+        }
+
+        .screen-detail-grid {
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+        }
+
+    }
+
+
+    @media (max-width: 900px) {
+
+        .proposal-review {
+            padding: 16px;
+        }
+
+
+        .proposal-hero-top {
+            flex-direction: column;
+        }
+
+
+        .proposal-actions {
+            justify-content: flex-start;
+
+            min-width: 0;
+
+            max-width: none;
+        }
+
+
+        .two-column,
+        .technical-grid {
+            grid-template-columns: 1fr;
+        }
+
+
+        .procurement-panel-header {
+            flex-direction: column;
+        }
+
+    }
+
+
+    @media (max-width: 600px) {
+
+        .pricing-grid,
+        .procurement-summary-grid {
+            grid-template-columns: 1fr;
+        }
+
+
+        .screen-detail-grid {
+            grid-template-columns: 1fr;
+        }
+
+
+        .proposal-hero {
+            padding: 20px;
+        }
+
+
+        .proposal-hero h1 {
+            font-size: 23px;
+        }
+
+
+        .section-body {
+            padding: 16px;
+        }
+
+
+        .proposal-actions {
+            display: grid;
+
+            grid-template-columns: 1fr;
+
+            width: 100%;
+        }
+
+
+        .review-btn {
+            width: 100%;
+        }
+
+
+        .procurement-actions {
+            justify-content: stretch;
+        }
+
+
+        .procurement-action {
+            width: 100%;
+        }
+
+
+        .bottom-actions {
+            justify-content: stretch;
+        }
+
+
+        .bottom-btn {
+            width: 100%;
+        }
+
+    }
+
+</style>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="proposal-review">
+
+```
+<!-- =====================================================
+     HERO
+====================================================== -->
+
+<section class="proposal-hero">
+
+    <div class="proposal-hero-top">
+
+
+        <!-- =================================================
+             PROPOSAL INFORMATION
+        ================================================== -->
+
+        <div>
+
+            <h1>
+                {{ proposal.title }}
+            </h1>
+
+
+            <div class="proposal-subtitle">
+
+                Internal proposal review and commercial
+                scope verification.
+
+            </div>
+
+
+            <div class="proposal-meta-row">
+
+
+                <span class="meta-pill">
+
+                    <strong>Version</strong>
+
+                    v{{ proposal.version }}
+
+                </span>
+
+
+                <span class="meta-pill">
+
+                    <strong>Status</strong>
+
+                    <span class="status-badge status-{{ proposal.status }}">
+
+                        {{ proposal.get_status_display }}
+
+                    </span>
+
+                </span>
+
+
+                {% if proposal.lead %}
+
+                <span class="meta-pill">
+
+                    <strong>Lead</strong>
+
+                    {{ proposal.lead }}
+
+                </span>
+
+                {% endif %}
+
+
+                {% if proposal.organization %}
+
+                <span class="meta-pill">
+
+                    <strong>Organization</strong>
+
+                    {{ proposal.organization }}
+
+                </span>
+
+                {% endif %}
+
+
+                <span class="meta-pill">
+
+                    <strong>Created</strong>
+
+                    {{ proposal.created_at|date:"M d, Y H:i" }}
+
+                </span>
+
+
+            </div>
+
+
+            <!-- =================================================
+                 REFERENCE
+            ================================================== -->
+
+            <div class="proposal-reference">
+
+                <strong>Proposal ID</strong>
+
+                {{ proposal.id }}
+
+            </div>
+
+
+            {% if proposal.quote_request %}
+
+            <div class="proposal-reference">
+
+                <strong>Procurement Quote</strong>
+
+                {{ proposal.quote_request.id }}
+
+            </div>
+
+            {% endif %}
+
+
+        </div>
+
+
+        <!-- =================================================
+             ACTIONS
+        ================================================== -->
+
+        <div class="proposal-actions">
+
+
+            <a
+                href="{% url 'admin:proposals_proposal_change' proposal.id %}"
+                class="review-btn review-btn-primary"
+            >
+                ✏️ Edit Proposal
+            </a>
+
+
+            {% if client_url %}
+
+            <a
+                href="{{ client_url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="review-btn"
+            >
+                🌐 Client Preview
+            </a>
+
+            {% endif %}
+
+
+            {% if procurement_client_url %}
+
+            <a
+                href="{{ procurement_client_url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="review-btn review-btn-success"
+            >
+                🛒 Procurement Proposal
+            </a>
+
+            {% endif %}
+
+
+            <a
+                href="{% url 'admin:proposals_proposal_recalculate' proposal.id %}"
+                class="review-btn"
+            >
+                ↻ Recalculate
+            </a>
+
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     PROCUREMENT PROPOSAL
+     ONLY SHOWN WHEN THIS PROPOSAL HAS A QUOTE REQUEST
+====================================================== -->
+
+{% if proposal.quote_request %}
+
+<section class="procurement-panel">
+
+
+    <div class="procurement-panel-header">
+
+
+        <div class="procurement-panel-title">
+
+
+            <div class="procurement-icon">
+                🛒
+            </div>
+
+
+            <div>
+
+                <h2>
+                    Procurement Quotation
+                </h2>
+
+                <p>
+                    This proposal is linked to a procurement
+                    quotation that can be reviewed and negotiated
+                    separately by the client.
+                </p>
+
+            </div>
+
+
+        </div>
+
+
+        {% if proposal.quote_request.status %}
+
+        <span class="procurement-status">
+
+            ●
+
+            {{ proposal.quote_request.status|title }}
+
+        </span>
+
+        {% endif %}
+
+
+    </div>
+
+
+    <div class="procurement-panel-body">
+
+
+        <div class="procurement-summary-grid">
+
+
+            <!-- QUOTE REFERENCE -->
+
+            <div class="procurement-stat">
+
+                <div class="procurement-stat-label">
+                    Quote Reference
+                </div>
+
+                <div class="procurement-stat-value">
+                    {{ proposal.quote_request.id|truncatechars:13 }}
+                </div>
+
+                <div class="procurement-stat-note">
+                    Procurement quotation
+                </div>
+
+            </div>
+
+
+            <!-- ITEMS -->
+
+            <div class="procurement-stat">
+
+                <div class="procurement-stat-label">
+                    Requested Items
+                </div>
+
+                <div class="procurement-stat-value">
+
+                    {% if proposal.quote_request.items.all %}
+                        {{ proposal.quote_request.items.count }}
+                    {% else %}
+                        0
+                    {% endif %}
+
+                </div>
+
+                <div class="procurement-stat-note">
+                    Product line items
+                </div>
+
+            </div>
+
+
+            <!-- QUOTATION TOTAL -->
+
+            <div class="procurement-stat">
+
+                <div class="procurement-stat-label">
+                    Quotation Total
+                </div>
+
+                <div class="procurement-stat-value">
+
+                    {{ proposal.quote_request.currency }}
+
+                    {{ proposal.quote_request.total|floatformat:2|intcomma }}
+
+                </div>
+
+                <div class="procurement-stat-note">
+                    Current quoted amount
+                </div>
+
+            </div>
+
+
+            <!-- PROPOSAL TOTAL -->
+
+            <div class="procurement-stat">
+
+                <div class="procurement-stat-label">
+                    Proposal Total
+                </div>
+
+                <div class="procurement-stat-value">
+
+                    {{ proposal.currency }}
+
+                    {{ proposal.total_price|floatformat:2|intcomma }}
+
+                </div>
+
+                <div class="procurement-stat-note">
+                    Current proposal investment
+                </div>
+
+            </div>
+
+
+        </div>
+
+
+        <!-- =================================================
+             PROCUREMENT NOTICE
+        ================================================== -->
+
+        <div class="procurement-notice">
+
+            <span>
+                ℹ️
+            </span>
+
+            <div>
+
+                <strong>
+                    Separate procurement workflow:
+                </strong>
+
+                The client can review procurement items,
+                quantities, quoted prices, proposed prices and
+                revisions through the dedicated procurement
+                proposal page.
+
+                Procurement negotiations are kept separate from
+                the software/project proposal workflow.
+
+            </div>
+
+        </div>
+
+
+        <!-- =================================================
+             PROCUREMENT ACTION
+        ================================================== -->
+
+        {% if procurement_client_url %}
+
+        <div class="procurement-actions">
+
+            <a
+                href="{{ procurement_client_url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="procurement-action procurement-action-primary"
+            >
+                🛒 Open Client Procurement Proposal
+            </a>
+
+        </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+{% endif %}
+
+
+<!-- =====================================================
+     PRICING
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+
+        <div class="section-heading-left">
+
+            <span class="section-icon">
+                💰
+            </span>
+
+            <div>
+
+                <h2>
+                    Pricing Overview
+                </h2>
+
+                <p>
+                    Current pricing calculated from the saved
+                    proposal features.
+                </p>
+
+            </div>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        <div class="pricing-grid">
+
+
+            <!-- CONFIRMED -->
+
+            <div class="pricing-card confirmed">
+
+                <div class="pricing-label">
+                    Confirmed
+                </div>
+
+                <div class="pricing-value">
+
+                    {{ proposal.currency }}
+
+                    {{ confirmed_total|default:"0"|floatformat:2|intcomma }}
+
+                </div>
+
+                <div class="pricing-note">
+                    Required client scope.
+                </div>
+
+            </div>
+
+
+            <!-- RECOMMENDED -->
+
+            <div class="pricing-card recommended">
+
+                <div class="pricing-label">
+                    Recommended
+                </div>
+
+                <div class="pricing-value">
+
+                    {{ proposal.currency }}
+
+                    {{ recommended_total|default:"0"|floatformat:2|intcomma }}
+
+                </div>
+
+                <div class="pricing-note">
+                    Included in the current quote.
+                </div>
+
+            </div>
+
+
+            <!-- OPTIONAL -->
+
+            <div class="pricing-card optional">
+
+                <div class="pricing-label">
+                    Optional / Future
+                </div>
+
+                <div class="pricing-value">
+
+                    {{ proposal.currency }}
+
+                    {{ optional_total|default:"0"|floatformat:2|intcomma }}
+
+                </div>
+
+                <div class="pricing-note">
+                    Available but not currently included.
+                </div>
+
+            </div>
+
+
+            <!-- TOTAL -->
+
+            <div class="pricing-card total">
+
+                <div class="pricing-label">
+                    Current Proposal Total
+                </div>
+
+                <div class="pricing-value">
+
+                    {{ proposal.currency }}
+
+                    {{ proposal.total_price|floatformat:2|intcomma }}
+
+                </div>
+
+                <div class="pricing-note">
+                    Confirmed + recommended scope.
+                </div>
+
+            </div>
+
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     EXECUTIVE SUMMARY / CLIENT SUMMARY
+====================================================== -->
+
+<div class="two-column">
+
+
+    <!-- EXECUTIVE SUMMARY -->
+
+    <section class="review-section">
+
+
+        <div class="section-heading">
+
+            <div class="section-heading-left">
+
+                <span class="section-icon">
+                    📋
+                </span>
+
+                <h2>
+                    Executive Summary
+                </h2>
+
+            </div>
+
+        </div>
+
+
+        <div class="section-body">
+
+            {% if proposal.executive_summary %}
+
+                <div class="readable-text">
+
+                    {{ proposal.executive_summary }}
+
+                </div>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No executive summary provided.
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+    </section>
+
+
+    <!-- CLIENT SUMMARY -->
+
+    <section class="review-section">
+
+
+        <div class="section-heading">
+
+            <div class="section-heading-left">
+
+                <span class="section-icon">
+                    👤
+                </span>
+
+                <h2>
+                    Client Summary
+                </h2>
+
+            </div>
+
+        </div>
+
+
+        <div class="section-body">
+
+            {% if proposal.client_summary %}
+
+                <div class="readable-text">
+
+                    {{ proposal.client_summary }}
+
+                </div>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No client summary provided.
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+    </section>
+
+
+</div>
+
+
+<!-- =====================================================
+     BUSINESS OBJECTIVES
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+        <div class="section-heading-left">
+
+            <span class="section-icon">
+                🎯
+            </span>
+
+            <div>
+
+                <h2>
+                    Business Objectives
+                </h2>
+
+                <p>
+                    What the proposed software is intended to achieve.
+                </p>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        {% if proposal.business_objectives %}
+
+            <ul class="clean-list">
+
+                {% for item in proposal.business_objectives %}
+
+                    <li>
+
+                        {% if item.name %}
+
+                            <strong>
+                                {{ item.name }}
+                            </strong>
+
+                            {% if item.description %}
+
+                                <br>
+
+                                {{ item.description }}
+
+                            {% endif %}
+
+                        {% else %}
+
+                            {{ item }}
+
+                        {% endif %}
+
+                    </li>
+
+                {% endfor %}
+
+            </ul>
+
+        {% else %}
+
+            <div class="empty-state">
+
+                No business objectives provided.
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     REQUIREMENTS
+====================================================== -->
+
+<div class="two-column">
+
+
+    <!-- CONFIRMED -->
+
+    <section class="review-section">
+
+
+        <div class="section-heading">
+
+            <div>
+
+                <h2>
+                    ✓ Confirmed Requirements
+                </h2>
+
+                <p>
+                    Requirements that are part of the client's
+                    confirmed scope.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="section-body">
+
+
+            {% if proposal.confirmed_requirements %}
+
+                <ul class="clean-list">
+
+                    {% for item in proposal.confirmed_requirements %}
+
+                        <li>
+
+                            {% if item.name %}
+
+                                <strong>
+                                    {{ item.name }}
+                                </strong>
+
+                                {% if item.description %}
+
+                                    <br>
+
+                                    {{ item.description }}
+
+                                {% endif %}
+
+                            {% else %}
+
+                                {{ item }}
+
+                            {% endif %}
+
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No confirmed requirements.
+
+                </div>
+
+            {% endif %}
+
+
+        </div>
+
+    </section>
+
+
+    <!-- RECOMMENDED -->
+
+    <section class="review-section">
+
+
+        <div class="section-heading">
+
+            <div>
+
+                <h2>
+                    ★ Recommended Requirements
+                </h2>
+
+                <p>
+                    Recommended scope currently included in pricing.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="section-body">
+
+
+            {% if proposal.recommended_requirements %}
+
+                <ul class="clean-list recommended-list">
+
+                    {% for item in proposal.recommended_requirements %}
+
+                        <li>
+
+                            {% if item.name %}
+
+                                <strong>
+                                    {{ item.name }}
+                                </strong>
+
+                                {% if item.description %}
+
+                                    <br>
+
+                                    {{ item.description }}
+
+                                {% endif %}
+
+                            {% else %}
+
+                                {{ item }}
+
+                            {% endif %}
+
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No recommended requirements.
+
+                </div>
+
+            {% endif %}
+
+
+        </div>
+
+    </section>
+
+
+    <!-- OPTIONAL -->
+
+    <section class="review-section full-width">
+
+
+        <div class="section-heading">
+
+            <div>
+
+                <h2>
+                    ＋ Optional / Future Features
+                </h2>
+
+                <p>
+                    Potential additions that are not currently
+                    included in the proposal total.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="section-body">
+
+
+            {% if proposal.optional_future_features %}
+
+                <ul class="clean-list optional-list">
+
+                    {% for item in proposal.optional_future_features %}
+
+                        <li>
+
+                            {% if item.name %}
+
+                                <strong>
+                                    {{ item.name }}
+                                </strong>
+
+                                {% if item.description %}
+
+                                    <br>
+
+                                    {{ item.description }}
+
+                                {% endif %}
+
+                            {% else %}
+
+                                {{ item }}
+
+                            {% endif %}
+
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No optional or future features.
+
+                </div>
+
+            {% endif %}
+
+
+        </div>
+
+    </section>
+
+
+</div>
+
+
+<!-- =====================================================
+     FEATURES
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+
+        <div>
+
+            <h2>
+                ⚙️ Proposal Features
+            </h2>
+
+            <p>
+                Detailed functionality and pricing used to
+                calculate the proposal.
+            </p>
+
+        </div>
+
+
+        <span class="feature-count">
+
+            {{ proposal_features|length }}
+
+        </span>
+
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        {% if proposal_features %}
+
+            <div class="feature-table-wrapper">
+
+
+                <table class="feature-table">
+
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Feature</th>
+
+                            <th>Category</th>
+
+                            <th>Complexity</th>
+
+                            <th>Qty</th>
+
+                            <th>Unit Price</th>
+
+                            <th>Total</th>
+
+                            <th>Scope</th>
+
+                            <th>Source</th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+
+                    {% for feature in proposal_features %}
+
+                        <tr>
+
+
+                            <td>
+
+                                <div class="feature-name">
+
+                                    {{ feature.name }}
+
+                                </div>
+
+
+                                {% if feature.description %}
+
+                                    <div class="feature-description">
+
+                                        {{ feature.description }}
+
+                                    </div>
+
+                                {% endif %}
+
+
+                                <div class="feature-key">
+
+                                    {{ feature.feature_key }}
+
+                                </div>
+
+                            </td>
+
+
+                            <td>
+
+                                {{ feature.category|default:"—" }}
+
+                            </td>
+
+
+                            <td>
+
+                                {{ feature.get_complexity_display }}
+
+                            </td>
+
+
+                            <td>
+
+                                {{ feature.quantity }}
+
+                            </td>
+
+
+                            <td class="price-cell">
+
+                                {{ proposal.currency }}
+
+                                {{ feature.unit_price|floatformat:2|intcomma }}
+
+                            </td>
+
+
+                            <td class="price-cell price-total">
+
+                                {{ proposal.currency }}
+
+                                {{ feature.total_price|floatformat:2|intcomma }}
+
+                            </td>
+
+
+                            <td>
+
+
+                                {% if feature.status == "confirmed" %}
+
+                                    <span class="scope-badge scope-confirmed">
+
+                                        Confirmed
+
+                                    </span>
+
+
+                                {% elif feature.status == "recommended" %}
+
+                                    <span class="scope-badge scope-recommended">
+
+                                        Recommended
+
+                                    </span>
+
+
+                                {% elif feature.status == "optional" %}
+
+                                    <span class="scope-badge scope-optional">
+
+                                        Optional
+
+                                    </span>
+
+
+                                {% elif feature.status == "future" %}
+
+                                    <span class="scope-badge scope-future">
+
+                                        Future
+
+                                    </span>
+
+
+                                {% elif feature.status == "removed" %}
+
+                                    <span class="scope-badge scope-removed">
+
+                                        Removed
+
+                                    </span>
+
+
+                                {% elif feature.status == "rejected" %}
+
+                                    <span class="scope-badge scope-rejected">
+
+                                        Rejected
+
+                                    </span>
+
+
+                                {% else %}
+
+                                    <span class="scope-badge scope-pending">
+
+                                        {{ feature.get_status_display }}
+
+                                    </span>
+
+                                {% endif %}
+
+
+                            </td>
+
+
+                            <td>
+
+                                {{ feature.get_source_display }}
+
+                            </td>
+
+
+                        </tr>
+
+                    {% endfor %}
+
+
+                    </tbody>
+
+
+                </table>
+
+
+            </div>
+
+
+        {% else %}
+
+            <div class="empty-state">
+
+                No proposal features have been added.
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     SCREENS
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+
+        <div>
+
+            <h2>
+                🖥 Pages & Screens
+            </h2>
+
+            <p>
+                Scope transparency only — screens do not determine
+                pricing.
+            </p>
+
+        </div>
+
+
+        <span class="feature-count">
+
+            {{ screens|length }}
+
+        </span>
+
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        {% if screens %}
+
+            <div class="screen-list">
+
+
+                {% for screen in screens %}
+
+                    <article class="screen-card">
+
+
+                        <div class="screen-card-header">
+
+
+                            <div>
+
+                                <div class="screen-name">
+
+                                    {{ screen.name }}
+
+                                </div>
+
+
+                                <div class="screen-meta">
+
+
+                                    {% if screen.screen_type %}
+
+                                        {{ screen.screen_type }}
+
+                                    {% endif %}
+
+
+                                    {% if screen.complexity %}
+
+                                        ·
+
+                                        {{ screen.complexity|title }}
+
+                                    {% endif %}
+
+
+                                </div>
+
+                            </div>
+
+
+                            <span class="scope-badge">
+
+                                {{ screen.status|title }}
+
+                            </span>
+
+
+                        </div>
+
+
+                        <div class="screen-body">
+
+
+                            {% if screen.purpose %}
+
+                                <div class="screen-purpose">
+
+                                    <strong>
+                                        Purpose
+                                    </strong>
+
+                                    <br>
+
+                                    {{ screen.purpose }}
+
+                                </div>
+
+                            {% endif %}
+
+
+                            <div class="screen-detail-grid">
+
+
+                                <div class="screen-detail">
+
+                                    <span class="screen-detail-label">
+                                        User Roles
+                                    </span>
+
+                                    <pre class="structured-value">{{ screen.user_roles_display }}</pre>
+
+                                </div>
+
+
+                                <div class="screen-detail">
+
+                                    <span class="screen-detail-label">
+                                        Key Functionality
+                                    </span>
+
+                                    <pre class="structured-value">{{ screen.key_functionality_display }}</pre>
+
+                                </div>
+
+
+                                <div class="screen-detail">
+
+                                    <span class="screen-detail-label">
+                                        Major Components
+                                    </span>
+
+                                    <pre class="structured-value">{{ screen.major_components_display }}</pre>
+
+                                </div>
+
+
+                                <div class="screen-detail">
+
+                                    <span class="screen-detail-label">
+                                        Data Involved
+                                    </span>
+
+                                    <pre class="structured-value">{{ screen.data_involved_display }}</pre>
+
+                                </div>
+
+
+                                <div class="screen-detail">
+
+                                    <span class="screen-detail-label">
+                                        Actions
+                                    </span>
+
+                                    <pre class="structured-value">{{ screen.actions_display }}</pre>
+
+                                </div>
+
+
+                                <div class="screen-detail">
+
+                                    <span class="screen-detail-label">
+                                        Dependencies
+                                    </span>
+
+                                    <pre class="structured-value">{{ screen.dependencies_display }}</pre>
+
+                                </div>
+
+
+                            </div>
+
+                        </div>
+
+                    </article>
+
+                {% endfor %}
+
+
+            </div>
+
+
+        {% else %}
+
+            <div class="empty-state">
+
+                No screens have been defined.
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     TECHNICAL SCOPE
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+
+        <div>
+
+            <h2>
+                🛠 Technical Scope
+            </h2>
+
+            <p>
+                Technical architecture and implementation scope.
+            </p>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        <div class="technical-grid">
+
+
+            <div class="technical-card">
+
+                <div class="technical-card-title">
+
+                    <span class="technical-icon">
+                        ⚙
+                    </span>
+
+                    Technical Scope
+
+                </div>
+
+                <pre class="structured-value">{{ proposal_json.technical_scope }}</pre>
+
+            </div>
+
+
+            <div class="technical-card">
+
+                <div class="technical-card-title">
+
+                    <span class="technical-icon">
+                        ◈
+                    </span>
+
+                    Backend
+
+                </div>
+
+                <pre class="structured-value">{{ proposal_json.backend }}</pre>
+
+            </div>
+
+
+            <div class="technical-card">
+
+                <div class="technical-card-title">
+
+                    <span class="technical-icon">
+                        📱
+                    </span>
+
+                    Mobile
+
+                </div>
+
+                <pre class="structured-value">{{ proposal_json.mobile }}</pre>
+
+            </div>
+
+
+            <div class="technical-card">
+
+                <div class="technical-card-title">
+
+                    <span class="technical-icon">
+                        🚀
+                    </span>
+
+                    DevOps & Deployment
+
+                </div>
+
+                <pre class="structured-value">{{ proposal_json.devops }}</pre>
+
+            </div>
+
+
+            <div class="technical-card">
+
+                <div class="technical-card-title">
+
+                    <span class="technical-icon">
+                        🔐
+                    </span>
+
+                    Authentication
+
+                </div>
+
+                <pre class="structured-value">{{ proposal_json.authentication }}</pre>
+
+            </div>
+
+
+            <div class="technical-card">
+
+                <div class="technical-card-title">
+
+                    <span class="technical-icon">
+                        🛡
+                    </span>
+
+                    Security
+
+                </div>
+
+                <pre class="structured-value">{{ proposal_json.security }}</pre>
+
+            </div>
+
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     INTEGRATIONS
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+
+        <div>
+
+            <h2>
+                🔗 Integrations
+            </h2>
+
+            <p>
+                External systems and services involved in the project.
+            </p>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        {% if proposal.integrations %}
+
+            <ul class="clean-list">
+
+                {% for item in proposal.integrations %}
+
+                    <li>
+
+                        {% if item.name %}
+
+                            <strong>
+                                {{ item.name }}
+                            </strong>
+
+                            {% if item.description %}
+
+                                <br>
+
+                                {{ item.description }}
+
+                            {% endif %}
+
+                        {% else %}
+
+                            {{ item }}
+
+                        {% endif %}
+
+                    </li>
+
+                {% endfor %}
+
+            </ul>
+
+        {% else %}
+
+            <div class="empty-state">
+
+                No integrations specified.
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     DELIVERABLES / ASSUMPTIONS / EXCLUSIONS
+====================================================== -->
+
+<div class="two-column">
+
+
+    <!-- DELIVERABLES -->
+
+    <section class="review-section">
+
+        <div class="section-heading">
+
+            <h2>
+                📦 Deliverables
+            </h2>
+
+        </div>
+
+
+        <div class="section-body">
+
+
+            {% if proposal.deliverables %}
+
+                <ul class="clean-list">
+
+                    {% for item in proposal.deliverables %}
+
+                        <li>
+                            {{ item }}
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No deliverables specified.
+
+                </div>
+
+            {% endif %}
+
+
+        </div>
+
+    </section>
+
+
+    <!-- ASSUMPTIONS -->
+
+    <section class="review-section">
+
+        <div class="section-heading">
+
+            <h2>
+                📝 Assumptions
+            </h2>
+
+        </div>
+
+
+        <div class="section-body">
+
+
+            {% if proposal.assumptions %}
+
+                <ul class="clean-list">
+
+                    {% for item in proposal.assumptions %}
+
+                        <li>
+                            {{ item }}
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No assumptions specified.
+
+                </div>
+
+            {% endif %}
+
+
+        </div>
+
+    </section>
+
+
+    <!-- EXCLUSIONS -->
+
+    <section class="review-section">
+
+        <div class="section-heading">
+
+            <h2>
+                🚫 Exclusions
+            </h2>
+
+        </div>
+
+
+        <div class="section-body">
+
+
+            {% if proposal.exclusions %}
+
+                <ul class="clean-list">
+
+                    {% for item in proposal.exclusions %}
+
+                        <li>
+                            {{ item }}
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No exclusions specified.
+
+                </div>
+
+            {% endif %}
+
+
+        </div>
+
+    </section>
+
+
+    <!-- RECURRING COSTS -->
+
+    <section class="review-section">
+
+        <div class="section-heading">
+
+            <h2>
+                💳 External / Recurring Costs
+            </h2>
+
+        </div>
+
+
+        <div class="section-body">
+
+
+            {% if proposal.recurring_costs %}
+
+                <ul class="clean-list">
+
+                    {% for item in proposal.recurring_costs %}
+
+                        <li>
+                            {{ item }}
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            {% else %}
+
+                <div class="empty-state">
+
+                    No recurring external costs specified.
+
+                </div>
+
+            {% endif %}
+
+
+        </div>
+
+    </section>
+
+
+</div>
+
+
+<!-- =====================================================
+     MILESTONES
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+
+        <div>
+
+            <h2>
+                📅 Project Milestones
+            </h2>
+
+            <p>
+                Planned implementation stages.
+            </p>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        {% if proposal.milestones %}
+
+            <div class="milestones">
+
+
+                {% for milestone in proposal.milestones %}
+
+                    <div class="milestone">
+
+
+                        <div class="milestone-number">
+
+                            {{ forloop.counter }}
+
+                        </div>
+
+
+                        <div>
+
+
+                            <div class="milestone-title">
+
+
+                                {% if milestone.name %}
+
+                                    {{ milestone.name }}
+
+                                {% elif milestone.title %}
+
+                                    {{ milestone.title }}
+
+                                {% else %}
+
+                                    Milestone {{ forloop.counter }}
+
+                                {% endif %}
+
+
+                            </div>
+
+
+                            {% if milestone.description %}
+
+                                <div class="milestone-description">
+
+                                    {{ milestone.description }}
+
+                                </div>
+
+                            {% endif %}
+
+
+                        </div>
+
+
+                    </div>
+
+                {% endfor %}
+
+
+            </div>
+
+
+        {% else %}
+
+            <div class="empty-state">
+
+                No milestones specified.
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     TIMELINE
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+        <div>
+
+            <h2>
+                ⏱ Timeline
+            </h2>
+
+        </div>
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        {% if proposal.timeline %}
+
+            <pre class="structured-value">
+
+
+{{ proposal_json.timeline }}
+
+
+            </pre>
+
+        {% else %}
+
+            <div class="empty-state">
+
+                No timeline specified.
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     PROJECT SCOPE
+====================================================== -->
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+        <div>
+
+            <h2>
+                📐 Project Scope
+            </h2>
+
+        </div>
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        {% if proposal.scope %}
+
+            <pre class="structured-value">
+
+
+{{ proposal_json.scope }}
+
+
+            </pre>
+
+        {% else %}
+
+            <div class="empty-state">
+
+                No project scope specified.
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+</section>
+
+
+<!-- =====================================================
+     AI ANALYSIS
+====================================================== -->
+
+{% if proposal.ai_analysis %}
+
+<section class="review-section">
+
+
+    <div class="section-heading">
+
+
+        <div>
+
+            <h2>
+                🤖 AI Analysis
+            </h2>
+
+            <p>
+                Internal AI-generated analysis. Not client-facing.
+            </p>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="section-body">
+
+
+        <div class="ai-warning">
+
+            <strong>
+                Internal only:
+            </strong>
+
+            <span>
+
+                This information is generated by AI and is provided
+                for AB Technologies' internal review. It does not
+                determine the final price directly.
+
+            </span>
+
+        </div>
+
+
+        <div class="ai-content">
+
+            <pre>
+
+
+{{ proposal_json.ai_analysis }}
+
+
+            </pre>
+
+        </div>
+
+
+    </div>
+
+</section>
+
+{% endif %}
+
+
+<!-- =====================================================
+     BOTTOM ACTIONS
+====================================================== -->
+
+<div class="bottom-actions">
+
+
+    <a
+        href="{% url 'admin:proposals_proposal_changelist' %}"
+        class="bottom-btn"
+    >
+        ← Back to Proposals
+    </a>
+
+
+    <a
+        href="{% url 'admin:proposals_proposal_change' proposal.id %}"
+        class="bottom-btn"
+    >
+        ✏️ Edit Proposal
+    </a>
+
+
+    {% if client_url %}
+
+    <a
+        href="{{ client_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="bottom-btn"
+    >
+        🌐 Client Preview
+    </a>
+
+    {% endif %}
+
+
+    {% if procurement_client_url %}
+
+    <a
+        href="{{ procurement_client_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="bottom-btn bottom-btn-success"
+    >
+        🛒 Procurement Proposal
+    </a>
+
+    {% endif %}
+
+
+</div>
+
+
+</div>
+
+{% endblock %}
