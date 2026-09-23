@@ -1,47 +1,10 @@
+from decimal import Decimal
+
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db.models import Count
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
-
-from .models import (
-    Lead,
-    QuoteRequest,
-    ProjectRequest,
-    SupportTicket,
-)
-
-from proposals.services import generate_initial_proposal
-
-
-# =========================================================
-# LEAD
-# =========================================================
-
-
-
-# =========================================================
-# QUOTE REQUEST
-# =========================================================
-from decimal import Decimal
-
-from django.contrib import admin
-from django.db.models import Count
-from django.utils.html import format_html
-
-from .models import (
-    Lead,
-    QuoteRequest,
-    ProcurementQuotationItem,
-    ProjectRequest,
-    SupportTicket,
-)
-
-
-# =========================================================
-# LEAD ADMIN
-# =========================================================
-from decimal import Decimal
-
-from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
@@ -49,7 +12,11 @@ from .models import (
     Lead,
     QuoteRequest,
     ProcurementQuotationItem,
+    ProjectRequest,
+    SupportTicket,
 )
+
+from proposals.services import generate_initial_proposal
 
 
 # =========================================================
@@ -182,9 +149,11 @@ class LeadAdmin(admin.ModelAdmin):
 # =========================================================
 
 class ProcurementQuotationItemInline(admin.TabularInline):
-    model = ProcurementQuotationItem
+    """Edit and price procurement items directly on a QuoteRequest."""
 
+    model = ProcurementQuotationItem
     extra = 0
+    show_change_link = True
 
     fields = (
         "category",
@@ -202,29 +171,25 @@ class ProcurementQuotationItemInline(admin.TabularInline):
         "total_price_display",
     )
 
-    show_change_link = True
-
     @admin.display(description="Item Total")
     def total_price_display(self, obj):
         if not obj.pk or obj.total_price is None:
             return mark_safe(
-        '<span style="color:#d97706;font-weight:600;">'
-        'Not priced'
-        '</span>'
-    )
+                '<span style="color:#d97706;font-weight:600;">'
+                'Not priced'
+                '</span>'
+            )
 
         currency = (
             obj.quotation.currency
-            if obj.quotation_id
+            if obj.quotation_id and obj.quotation.currency
             else "NGN"
         )
 
-        amount = f"{obj.total_price:,.2f}"
-
         return format_html(
-            "<strong>{} {}</strong>",
+            '<strong style="white-space:nowrap;">{} {:,.2f}</strong>',
             currency,
-            amount,
+            obj.total_price,
         )
 
 
@@ -234,6 +199,7 @@ class ProcurementQuotationItemInline(admin.TabularInline):
 
 @admin.register(ProcurementQuotationItem)
 class ProcurementQuotationItemAdmin(admin.ModelAdmin):
+    """Standalone item view for searching and auditing quotation lines."""
 
     list_display = (
         "name",
@@ -258,6 +224,7 @@ class ProcurementQuotationItemAdmin(admin.ModelAdmin):
         "category",
         "brand",
         "model",
+        "description",
         "quotation__title",
         "quotation__lead__name",
         "quotation__lead__email",
@@ -275,31 +242,39 @@ class ProcurementQuotationItemAdmin(admin.ModelAdmin):
         "quotation",
     )
 
+    list_select_related = (
+        "quotation",
+        "quotation__lead",
+    )
+
     ordering = (
         "-created_at",
     )
 
-    list_per_page = 25
+    date_hierarchy = "created_at"
+    list_per_page = 50
+    save_on_top = True
+    empty_value_display = "—"
 
     fieldsets = (
         (
-            "Item",
+            "Quotation",
             {
                 "fields": (
                     "id",
                     "quotation",
-                    "category",
-                    "name",
-                    "quantity",
                 )
             },
         ),
         (
-            "Product",
+            "Item Details",
             {
                 "fields": (
+                    "category",
+                    "name",
                     "brand",
                     "model",
+                    "quantity",
                     "description",
                     "specifications",
                 )
@@ -315,8 +290,9 @@ class ProcurementQuotationItemAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Dates",
+            "Audit",
             {
+                "classes": ("collapse",),
                 "fields": (
                     "created_at",
                     "updated_at",
@@ -325,76 +301,86 @@ class ProcurementQuotationItemAdmin(admin.ModelAdmin):
         ),
     )
 
-    @admin.display(description="Unit Price")
+    def save_model(self, request, obj, form, change):
+        obj.calculate_total(save=False)
+        super().save_model(request, obj, form, change)
+
+        if obj.quotation_id:
+            obj.quotation.calculate_totals(save=True)
+
+    def delete_model(self, request, obj):
+        quotation = obj.quotation
+        super().delete_model(request, obj)
+        quotation.calculate_totals(save=True)
+
+    def delete_queryset(self, request, queryset):
+        quotation_ids = list(
+            queryset.values_list("quotation_id", flat=True).distinct()
+        )
+        super().delete_queryset(request, queryset)
+
+        for quotation in QuoteRequest.objects.filter(pk__in=quotation_ids):
+            quotation.calculate_totals(save=True)
+
+    @admin.display(description="Unit Price", ordering="unit_price")
     def unit_price_display(self, obj):
         if obj.unit_price is None:
             return mark_safe(
-            '<span style="color:#94a3b8;">Not priced</span>'
-        )
+                '<span style="color:#d97706;font-weight:600;">'
+                'Not priced'
+                '</span>'
+            )
 
         currency = obj.quotation.currency or "NGN"
-        amount = f"{obj.unit_price:,.2f}"
+        return f"{currency} {obj.unit_price:,.2f}"
 
-        return format_html(
-        "{} {}",
-        currency,
-        amount,
-        )
-
-    unit_price_display.short_description = "Unit Price"
-
-    @admin.display(description="Total")
+    @admin.display(description="Total", ordering="total_price")
     def total_price_display(self, obj):
         if obj.total_price is None:
             return mark_safe(
-            '<span style="color:#94a3b8;">Not priced</span>'
-        )
+                '<span style="color:#94a3b8;">—</span>'
+            )
 
         currency = obj.quotation.currency or "NGN"
-        amount = f"{obj.total_price:,.2f}"
-
         return format_html(
-        "{} {}",
-        currency,
-        amount,
-    )
-
-    total_price_display.short_description = "Total Price"
-    
+            '<strong style="white-space:nowrap;">{} {:,.2f}</strong>',
+            currency,
+            obj.total_price,
+        )
 
 
 # =========================================================
 # QUOTE REQUEST ADMIN
 # =========================================================
 
-from decimal import Decimal
-
-from django.contrib import admin, messages
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.utils.html import format_html, mark_safe
-
-
 @admin.register(QuoteRequest)
 class QuoteRequestAdmin(admin.ModelAdmin):
+    """
+    Procurement quotation workspace.
 
-    # =====================================================
-    # ADMIN CONFIGURATION
-    # =====================================================
+    QuoteRequest remains the financial source of truth. Items are priced
+    inline, line totals are calculated by ProcurementQuotationItem, and the
+    quotation totals are recalculated by QuoteRequest.calculate_totals().
+    """
 
     list_display = (
         "title",
-        "lead",
+        "client_display",
+        "request_type",
         "item_count",
+        "pricing_status",
         "status_badge",
-        "currency",
-        "subtotal_display",
+        "budget_display",
         "total_display",
+        "deadline",
         "created_at",
     )
 
     list_filter = (
         "status",
+        "request_type",
         "currency",
+        "deadline",
         "created_at",
     )
 
@@ -403,19 +389,25 @@ class QuoteRequestAdmin(admin.ModelAdmin):
         "description",
         "purpose",
         "notes",
+        "tracking_reference",
         "lead__name",
         "lead__email",
+        "lead__phone",
         "lead__company",
+        "items__name",
+        "items__brand",
+        "items__model",
     )
 
     readonly_fields = (
         "id",
+        "tracking_reference",
+        "pricing_status",
+        "items_summary",
         "subtotal",
         "total",
         "created_at",
         "updated_at",
-        "pricing_status",
-        "items_summary",
     )
 
     autocomplete_fields = (
@@ -426,66 +418,89 @@ class QuoteRequestAdmin(admin.ModelAdmin):
         ProcurementQuotationItemInline,
     )
 
+    list_select_related = (
+        "lead",
+    )
+
     ordering = (
         "-created_at",
     )
 
-    list_per_page = 25
+    date_hierarchy = "created_at"
+    list_per_page = 50
+    save_on_top = True
+    empty_value_display = "—"
 
-    # Custom admin template so we can add the
-    # Generate Proposal button to the existing
-    # Django admin submit row.
-    change_form_template = (
-        "admin/crm/quoterequest/change_form.html"
+    # Existing custom template that adds the Generate Proposal submit button.
+    change_form_template = "admin/crm/quoterequest/change_form.html"
+
+    actions = (
+        "recalculate_selected_quotations",
     )
 
     fieldsets = (
         (
-            "Quotation Request",
+            "Client & Request",
             {
                 "fields": (
                     "id",
                     "lead",
                     "title",
+                    "request_type",
                     "description",
                     "purpose",
                 )
             },
         ),
         (
-            "Requested Items",
+            "Commercial Requirements",
             {
                 "fields": (
-                    "items_summary",
+                    "budget",
+                    "currency",
+                    "deadline",
                 )
             },
         ),
         (
-            "Pricing",
+            "Quotation Overview",
             {
                 "fields": (
-                    "currency",
+                    "pricing_status",
+                    "items_summary",
+                ),
+                "description": (
+                    "Price the requested products in the quotation items below. "
+                    "The summary and totals are calculated by Django."
+                ),
+            },
+        ),
+        (
+            "Financial Summary",
+            {
+                "fields": (
                     "subtotal",
                     "discount",
                     "tax",
                     "delivery_fee",
                     "total",
-                    "pricing_status",
                 )
             },
         ),
         (
-            "Status",
+            "Workflow & Tracking",
             {
                 "fields": (
                     "status",
+                    "tracking_reference",
                     "notes",
                 )
             },
         ),
         (
-            "Dates",
+            "Audit",
             {
+                "classes": ("collapse",),
                 "fields": (
                     "created_at",
                     "updated_at",
@@ -495,549 +510,362 @@ class QuoteRequestAdmin(admin.ModelAdmin):
     )
 
     # =====================================================
-    # DISPLAY HELPERS
+    # QUERYSET
     # =====================================================
 
-    @admin.display(description="Items")
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("lead")
+            .prefetch_related("items")
+            .annotate(_admin_item_count=Count("items", distinct=True))
+        )
+
+    # =====================================================
+    # LIST / DISPLAY HELPERS
+    # =====================================================
+
+    @admin.display(description="Client", ordering="lead__name")
+    def client_display(self, obj):
+        if not obj.lead_id:
+            return "—"
+
+        name = obj.lead.name or obj.lead.email or "Client"
+        secondary = obj.lead.company or obj.lead.email or ""
+
+        if secondary and secondary != name:
+            return format_html(
+                '<strong>{}</strong><br><span style="color:#64748b;font-size:11px;">{}</span>',
+                name,
+                secondary,
+            )
+
+        return name
+
+    @admin.display(description="Items", ordering="_admin_item_count")
     def item_count(self, obj):
-        count = obj.items.count()
+        count = getattr(obj, "_admin_item_count", None)
+        if count is None:
+            count = obj.items.count()
 
         if count == 0:
             return format_html(
-                '<span style="color:#dc2626;font-weight:600;">{}</span>',
-                "No items",
+                '<span style="color:#dc2626;font-weight:700;">No items</span>'
             )
 
-        return count
+        return format_html(
+            '<span style="font-weight:700;">{}</span>',
+            count,
+        )
 
-    @admin.display(description="Status")
+    @admin.display(description="Status", ordering="status")
     def status_badge(self, obj):
         colors = {
-            "draft": "#6b7280",
-            "priced": "#2563eb",
-            "sent": "#7c3aed",
-            "negotiation": "#d97706",
-            "accepted": "#16a34a",
-            "rejected": "#dc2626",
-            "expired": "#991b1b",
+            "draft": ("#475569", "#f1f5f9"),
+            "priced": ("#1d4ed8", "#dbeafe"),
+            "sent": ("#6d28d9", "#ede9fe"),
+            "negotiation": ("#b45309", "#fef3c7"),
+            "accepted": ("#15803d", "#dcfce7"),
+            "rejected": ("#b91c1c", "#fee2e2"),
+            "expired": ("#7f1d1d", "#fee2e2"),
+            "completed": ("#166534", "#dcfce7"),
         }
 
-        color = colors.get(
+        foreground, background = colors.get(
             obj.status,
-            "#6b7280",
+            ("#475569", "#f1f5f9"),
+        )
+
+        label = (
+            obj.get_status_display()
+            if hasattr(obj, "get_status_display")
+            else obj.status
         )
 
         return format_html(
-            '<span style="'
-            "display:inline-block;"
-            "padding:4px 10px;"
-            "border-radius:999px;"
-            "background:{};"
-            "color:white;"
-            "font-size:12px;"
-            "font-weight:600;"
-            '">{}</span>',
-            color,
-            obj.get_status_display(),
+            '<span style="display:inline-block;padding:4px 10px;'
+            'border-radius:999px;background:{};color:{};font-size:12px;'
+            'font-weight:700;white-space:nowrap;">{}</span>',
+            background,
+            foreground,
+            label,
         )
 
-    @admin.display(description="Subtotal")
-    def subtotal_display(self, obj):
-        return self.money(
-            obj.subtotal,
-            obj.currency,
-        )
+    @admin.display(description="Budget", ordering="budget")
+    def budget_display(self, obj):
+        if obj.budget is None:
+            return format_html(
+                '<span style="color:#94a3b8;">Not specified</span>'
+            )
+        return self.money(obj.budget, obj.currency)
 
-    @admin.display(description="Total")
+    @admin.display(description="Total", ordering="total")
     def total_display(self, obj):
         return format_html(
-            "<strong>{}</strong>",
-            self.money(
-                obj.total,
-                obj.currency,
-            ),
+            '<strong style="white-space:nowrap;">{}</strong>',
+            self.money(obj.total, obj.currency),
         )
 
     @staticmethod
     def money(value, currency):
-        value = value or Decimal("0")
+        value = value or Decimal("0.00")
         currency = currency or "NGN"
-
         return f"{currency} {value:,.2f}"
 
     # =====================================================
     # PRICING STATUS
     # =====================================================
 
-    @admin.display(description="Pricing Status")
+    @admin.display(description="Pricing")
     def pricing_status(self, obj):
         items = list(obj.items.all())
 
         if not items:
             return format_html(
-                '<span style="color:#dc2626;font-weight:600;">{}</span>',
-                "No items",
+                '<span style="color:#dc2626;font-weight:700;">No items</span>'
             )
 
-        unpriced = [
-            item
-            for item in items
-            if item.unit_price is None
-        ]
+        unpriced = [item for item in items if item.unit_price is None]
 
         if unpriced:
             return format_html(
-                '<span style="color:#d97706;font-weight:600;">'
-                "{} item(s) still need pricing"
-                "</span>",
+                '<span style="color:#b45309;font-weight:700;">{} unpriced</span>',
                 len(unpriced),
             )
 
         return format_html(
-            '<span style="color:#16a34a;font-weight:600;">{}</span>',
-            "All items priced",
+            '<span style="color:#15803d;font-weight:700;">Ready</span>'
         )
 
     # =====================================================
     # ITEMS SUMMARY
     # =====================================================
 
-    @admin.display(description="Items Summary")
+    @admin.display(description="Quotation Items Summary")
     def items_summary(self, obj):
-        items = list(
-            obj.items.all()
-        )
+        if not obj or not obj.pk:
+            return format_html(
+                '<span style="color:#64748b;">Save the quotation first, then add items below.</span>'
+            )
+
+        items = list(obj.items.all())
 
         if not items:
             return format_html(
-                '<span style="color:#999;">{}</span>',
-                "No items yet.",
+                '<div style="padding:12px;border:1px solid #fecaca;'
+                'background:#fef2f2;border-radius:8px;color:#991b1b;">'
+                '<strong>No quotation items yet.</strong> Add the requested products '
+                'using the inline section below.</div>'
             )
 
         rows = []
 
         for item in items:
-
             brand_model = " ".join(
-                value.strip()
-                for value in (
-                    item.brand,
-                    item.model,
-                )
+                str(value).strip()
+                for value in (item.brand, item.model)
                 if value and str(value).strip()
-            )
-
-            if not brand_model:
-                brand_model = "Brand/model not specified"
+            ) or "—"
 
             if item.unit_price is None:
-                unit_price = "Not priced"
+                unit_price = mark_safe(
+                    '<span style="color:#b45309;font-weight:600;">Not priced</span>'
+                )
                 total_price = "—"
             else:
-                unit_price = self.money(
-                    item.unit_price,
-                    obj.currency,
-                )
-
+                unit_price = self.money(item.unit_price, obj.currency)
                 total_price = self.money(
-                    item.total_price or Decimal("0"),
+                    item.total_price or Decimal("0.00"),
                     obj.currency,
                 )
 
-            row = format_html(
-                """
-                <tr>
-                    <td style="
-                        padding:8px;
-                        border-bottom:1px solid #eee;
-                    ">
-                        {}
-                    </td>
-
-                    <td style="
-                        padding:8px;
-                        border-bottom:1px solid #eee;
-                    ">
-                        <strong>{}</strong>
-                        <br>
-                        <small style="color:#666;">
-                            {}
-                        </small>
-                    </td>
-
-                    <td style="
-                        padding:8px;
-                        text-align:center;
-                        border-bottom:1px solid #eee;
-                    ">
-                        {}
-                    </td>
-
-                    <td style="
-                        padding:8px;
-                        border-bottom:1px solid #eee;
-                    ">
-                        {}
-                    </td>
-
-                    <td style="
-                        padding:8px;
-                        border-bottom:1px solid #eee;
-                    ">
-                        <strong>{}</strong>
-                    </td>
-                </tr>
-                """,
-                item.category or "—",
-                item.name or "—",
-                brand_model,
-                item.quantity,
-                unit_price,
-                total_price,
+            rows.append(
+                format_html(
+                    '<tr>'
+                    '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">{}</td>'
+                    '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">'
+                    '<strong>{}</strong><br><small style="color:#64748b;">{}</small></td>'
+                    '<td style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb;">{}</td>'
+                    '<td style="padding:8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;">{}</td>'
+                    '<td style="padding:8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;">'
+                    '<strong>{}</strong></td>'
+                    '</tr>',
+                    item.category or "—",
+                    item.name or "—",
+                    brand_model,
+                    item.quantity,
+                    unit_price,
+                    total_price,
+                )
             )
 
-            rows.append(row)
-
-        table = format_html(
-            """
-            <table style="
-                width:100%;
-                border-collapse:collapse;
-                background:#fff;
-                border:1px solid #eee;
-                border-radius:8px;
-                overflow:hidden;
-            ">
-                <thead>
-                    <tr style="background:#f8fafc;">
-                        <th style="
-                            text-align:left;
-                            padding:8px;
-                            border-bottom:1px solid #ddd;
-                        ">
-                            Category
-                        </th>
-
-                        <th style="
-                            text-align:left;
-                            padding:8px;
-                            border-bottom:1px solid #ddd;
-                        ">
-                            Item
-                        </th>
-
-                        <th style="
-                            text-align:center;
-                            padding:8px;
-                            border-bottom:1px solid #ddd;
-                        ">
-                            Qty
-                        </th>
-
-                        <th style="
-                            text-align:left;
-                            padding:8px;
-                            border-bottom:1px solid #ddd;
-                        ">
-                            Unit Price
-                        </th>
-
-                        <th style="
-                            text-align:left;
-                            padding:8px;
-                            border-bottom:1px solid #ddd;
-                        ">
-                            Total
-                        </th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {}
-                </tbody>
-            </table>
-            """,
-            mark_safe("".join(rows)),
+        return format_html(
+            '<div style="overflow-x:auto;">'
+            '<table style="width:100%;border-collapse:collapse;background:#fff;'
+            'border:1px solid #e5e7eb;">'
+            '<thead><tr style="background:#f8fafc;">'
+            '<th style="text-align:left;padding:8px;">Category</th>'
+            '<th style="text-align:left;padding:8px;">Item</th>'
+            '<th style="text-align:center;padding:8px;">Qty</th>'
+            '<th style="text-align:left;padding:8px;">Unit Price</th>'
+            '<th style="text-align:left;padding:8px;">Total</th>'
+            '</tr></thead><tbody>{}</tbody></table></div>',
+            mark_safe("".join(str(row) for row in rows)),
         )
-
-        return table
 
     # =====================================================
     # GENERATE PROPOSAL
     # =====================================================
 
     def response_change(self, request, obj):
-        """
-        Handles the custom "Generate Proposal" button.
-
-        The normal Django admin Save button continues to work
-        exactly as before.
-        """
-
+        """Handle the existing custom Generate Proposal submit button."""
         if "_generate_proposal" not in request.POST:
-            return super().response_change(
-                request,
-                obj,
-            )
+            return super().response_change(request, obj)
 
-        return self.generate_proposal(
-            request,
-            obj,
-        )
-
+        return self.generate_proposal(request, obj)
 
     def generate_proposal(self, request, quotation):
         """
-    Complete QuoteRequest -> Gemini -> Proposal workflow.
+        QuoteRequest -> validated pricing -> AI proposal -> persisted Proposal.
 
-    The workflow is:
-
-        QuoteRequest
-            ↓
-        Validate fully priced
-            ↓
-        Gemini generates proposal content
-            ↓
-        Django creates Proposal
-            ↓
-        ProposalRevision v1
-
-    Django remains the source of truth for all financial data.
+        Financial values remain controlled by Django/QuoteRequest.
         """
-
-        # -------------------------------------------------
-        # PERMISSION CHECK
-        # -------------------------------------------------
-
-        if not self.has_change_permission(
-        request,
-        quotation,
-        ):
+        if not self.has_change_permission(request, quotation):
             raise PermissionDenied
 
-        # -------------------------------------------------
-        # MUST BE PRICED
-        # -------------------------------------------------
+        # Always recalculate before validating readiness.
         quotation.calculate_totals(save=True)
         quotation.refresh_from_db()
-        if quotation.status != "priced":
 
-            self.message_user(
-                request,
-                (
-                "The proposal cannot be generated yet. "
-                "The quotation must be fully priced first."
-                ),
-                level=messages.ERROR,
-            )
-
-            return self.response_post_save_change(
-            request,
-            quotation,
-            )
-
-        # -------------------------------------------------
-        # MUST HAVE ITEMS
-        # -------------------------------------------------
-
-        items = list(
-        quotation.items.all()
-        )
+        items = list(quotation.items.all())
 
         if not items:
-
-            self.message_user(
-            request,
-            (
-                "The proposal cannot be generated because "
-                "this quotation has no items."
-            ),
-            level=messages.ERROR,
-        )
-
-            return self.response_post_save_change(
-            request,
-            quotation,
-        )
-
-        # -------------------------------------------------
-        # EVERY ITEM MUST HAVE A PRICE
-        # -------------------------------------------------
-
-        unpriced_items = [
-        item
-        for item in items
-        if item.unit_price is None
-        ]
-
-        if unpriced_items:
-
-            names = ", ".join(
-            item.name or "Unnamed item"
-            for item in unpriced_items
-        )
-
             self.message_user(
                 request,
-            (
-                "The proposal cannot be generated because "
-                f"the following item(s) are not priced: {names}"
-            ),
-            level=messages.ERROR,
-        )
+                "The proposal cannot be generated because this quotation has no items.",
+                level=messages.ERROR,
+            )
+            return self.response_post_save_change(request, quotation)
 
-            return self.response_post_save_change(
-            request,
-            quotation,
-        )
+        unpriced_items = [item for item in items if item.unit_price is None]
 
-        # -------------------------------------------------
-        # RECALCULATE QUOTATION
-        # -------------------------------------------------
+        if unpriced_items:
+            names = ", ".join(
+                item.name or "Unnamed item"
+                for item in unpriced_items
+            )
+            self.message_user(
+                request,
+                "The proposal cannot be generated because the following item(s) "
+                f"are not priced: {names}",
+                level=messages.ERROR,
+            )
+            return self.response_post_save_change(request, quotation)
 
-        quotation.calculate_totals(
-            save=True
-        )
-
-        quotation.refresh_from_db()
-        # -------------------------------------------------
-        # COMPLETE QUOTE -> PROPOSAL WORKFLOW
-        # -------------------------------------------------
+        # calculate_totals() is expected to mark a fully priced quotation as priced.
+        if quotation.status != "priced":
+            self.message_user(
+                request,
+                "The quotation is fully priced, but its status is not 'Priced'. "
+                "Recalculate/save the quotation and try again.",
+                level=messages.ERROR,
+            )
+            return self.response_post_save_change(request, quotation)
 
         try:
-
-            from ai.quoteproposal import (
-            generate_and_create_quote_proposal,
-            )
+            from ai.quoteproposal import generate_and_create_quote_proposal
 
             proposal = generate_and_create_quote_proposal(
                 quote_id=quotation.id,
                 created_by=request.user,
             )
 
-        except ValidationError as exc:
-
+        except (ValidationError, ValueError) as exc:
             self.message_user(
-            request,
-            (
-                "Proposal generation failed: "
-                f"{exc}"
-            ),
-            level=messages.ERROR,
-        )
-
-            return self.response_post_save_change(
-            request,
-            quotation,
-        )
-
-        except ValueError as exc:
-
-            self.message_user(
-            request,
-            (
-                "Proposal generation failed: "
-                f"{exc}"
-            ),
-            level=messages.ERROR,
-        )
-
-            return self.response_post_save_change(
-            request,
-            quotation,
-        )
+                request,
+                f"Proposal generation failed: {exc}",
+                level=messages.ERROR,
+            )
+            return self.response_post_save_change(request, quotation)
 
         except Exception as exc:
-
             self.message_user(
-            request,
-            (
-                "Proposal generation failed. "
-                f"{exc}"
-            ),
-            level=messages.ERROR,
-        )
-
-            return self.response_post_save_change(
-            request,
-            quotation,
-        )
-
-    # -------------------------------------------------
-    # SUCCESS
-    # -------------------------------------------------
+                request,
+                f"Proposal generation failed. {exc}",
+                level=messages.ERROR,
+            )
+            return self.response_post_save_change(request, quotation)
 
         self.message_user(
-        request,
-        (
+            request,
             "Proposal generated successfully. "
-            f"Proposal: {proposal.title} "
-            f"(v{proposal.version})"
-        ),
-        level=messages.SUCCESS,
-    )
+            f"Proposal: {proposal.title} (v{proposal.version})",
+            level=messages.SUCCESS,
+        )
 
-        return self.response_post_save_change(
-        request,
-        quotation,
-    )
-
-
+        # Take the administrator directly to the generated proposal.
+        try:
+            return HttpResponseRedirect(
+                reverse(
+                    "admin:proposals_proposal_change",
+                    args=[proposal.pk],
+                )
+            )
+        except Exception:
+            return self.response_post_save_change(request, quotation)
 
     # =====================================================
-    # SAVE
+    # SAVE / RECALCULATION
     # =====================================================
 
-    def save_formset(
-    self,
-    request,
-    form,
-    formset,
-    change,
-):
+    def save_formset(self, request, form, formset, change):
+        """Calculate every edited line before it is saved."""
         instances = formset.save(commit=False)
 
         for instance in instances:
-            instance.calculate_total(save=False)
+            if isinstance(instance, ProcurementQuotationItem):
+                instance.calculate_total(save=False)
             instance.save()
 
         for deleted_object in formset.deleted_objects:
             deleted_object.delete()
 
         formset.save_m2m()
-    # =====================================================
-    # INLINE FORMSET SAVE
-    # =====================================================
-
-    
-    # =====================================================
-    # SAVE RELATED
-    # =====================================================
 
     def save_related(self, request, form, formsets, change):
-        super().save_related(
-        request,
-        form,
-        formsets,
-        change,
-    )
-
+        """Recalculate QuoteRequest totals after all inline items are saved."""
+        super().save_related(request, form, formsets, change)
         quotation = form.instance
         quotation.calculate_totals(save=True)
 
-    # =====================================================
-    # ITEM TOTAL
-    # =====================================================
+    @admin.action(description="Recalculate selected quotation totals")
+    def recalculate_selected_quotations(self, request, queryset):
+        updated = 0
+        failed = 0
 
-    
-    # =====================================================
-    # QUOTATION TOTALS
-    # =====================================================
+        for quotation in queryset:
+            try:
+                quotation.calculate_totals(save=True)
+                updated += 1
+            except Exception:
+                failed += 1
 
-    
-  
+        if updated:
+            self.message_user(
+                request,
+                f"Recalculated {updated} quotation(s).",
+                level=messages.SUCCESS,
+            )
 
-#
+        if failed:
+            self.message_user(
+                request,
+                f"Could not recalculate {failed} quotation(s).",
+                level=messages.WARNING,
+            )
+
+
 # =========================================================
 # PROJECT REQUEST ADMIN
 # =========================================================
