@@ -551,7 +551,8 @@ class QuoteRequestAdmin(admin.ModelAdmin):
 
         if count == 0:
             return format_html(
-                '<span style="color:#dc2626;font-weight:700;">No items</span>'
+                '<span style="color:#dc2626;font-weight:700;">{}</span>',
+                "No items",
             )
 
         return format_html(
@@ -596,7 +597,8 @@ class QuoteRequestAdmin(admin.ModelAdmin):
     def budget_display(self, obj):
         if obj.budget is None:
             return format_html(
-                '<span style="color:#94a3b8;">Not specified</span>'
+                '<span style="color:#94a3b8;">{}</span>',
+                "Not specified",
             )
         return self.money(obj.budget, obj.currency)
 
@@ -623,7 +625,8 @@ class QuoteRequestAdmin(admin.ModelAdmin):
 
         if not items:
             return format_html(
-                '<span style="color:#dc2626;font-weight:700;">No items</span>'
+                '<span style="color:#dc2626;font-weight:700;">{}</span>',
+                "No items",
             )
 
         unpriced = [item for item in items if item.unit_price is None]
@@ -635,7 +638,8 @@ class QuoteRequestAdmin(admin.ModelAdmin):
             )
 
         return format_html(
-            '<span style="color:#15803d;font-weight:700;">Ready</span>'
+            '<span style="color:#15803d;font-weight:700;">{}</span>',
+            "Ready",
         )
 
     # =====================================================
@@ -646,7 +650,8 @@ class QuoteRequestAdmin(admin.ModelAdmin):
     def items_summary(self, obj):
         if not obj or not obj.pk:
             return format_html(
-                '<span style="color:#64748b;">Save the quotation first, then add items below.</span>'
+                '<span style="color:#64748b;">{}</span>',
+                "Save the quotation first, then add items below.",
             )
 
         items = list(obj.items.all())
@@ -655,8 +660,10 @@ class QuoteRequestAdmin(admin.ModelAdmin):
             return format_html(
                 '<div style="padding:12px;border:1px solid #fecaca;'
                 'background:#fef2f2;border-radius:8px;color:#991b1b;">'
-                '<strong>No quotation items yet.</strong> Add the requested products '
-                'using the inline section below.</div>'
+                '<strong>{}</strong> {}'
+                '</div>',
+                "No quotation items yet.",
+                "Add the requested products using the inline section below.",
             )
 
         rows = []
