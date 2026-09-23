@@ -259,6 +259,10 @@ def _get_quotation_from_proposal(proposal):
         "description": quote_request.description,
         "purpose": quote_request.purpose,
         "notes": quote_request.notes,
+        "tracking_reference": str(getattr(quote_request, "tracking_reference", "") or ""),
+        "budget": str(getattr(quote_request, "budget", "")) if getattr(quote_request, "budget", None) is not None else None,
+        "deadline": getattr(quote_request, "deadline", None).isoformat() if getattr(quote_request, "deadline", None) else None,
+        "created_at": getattr(quote_request, "created_at", None).isoformat() if getattr(quote_request, "created_at", None) else None,
         "currency": currency,
         "items": items,
         "subtotal": str(
@@ -508,6 +512,121 @@ def _get_screen_items(proposal):
         )
 
     return result
+
+
+def _humanize_key(value):
+    text = str(value or "").replace("_", " ").replace("-", " ").strip()
+    return " ".join(part.capitalize() for part in text.split())
+
+def _format_date_value(value):
+    if not value:
+        return ""
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%B %d, %Y")
+        except Exception:
+            pass
+    text = str(value).strip()
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%B %d, %Y")
+    except Exception:
+        return text
+
+def _normalise_rich_items(value):
+    if not value:
+        return []
+    if hasattr(value, "all") and callable(value.all):
+        try:
+            value = value.all()
+        except Exception:
+            value = []
+    if isinstance(value, dict):
+        if not any(k in value for k in ("title","name","label","description","deliverable","timeline")):
+            return [{"title": _humanize_key(k), "description": v} for k,v in value.items() if v not in (None,"",[],{})]
+        return [value]
+    if isinstance(value, str):
+        return [{"title": x} for x in _normalise_list(value)]
+    try:
+        values=list(value)
+    except TypeError:
+        values=[value]
+    result=[]
+    for item in values:
+        if isinstance(item, dict):
+            result.append(item)
+        elif hasattr(item, "_meta"):
+            result.append({
+                "title": getattr(item,"title",None) or getattr(item,"name",None) or str(item),
+                "description": getattr(item,"description",None) or "",
+                "deliverables": getattr(item,"deliverables",None) or [],
+                "due_date": getattr(item,"due_date",None),
+                "percentage": getattr(item,"percentage",None),
+                "amount": getattr(item,"amount",None),
+                "payment_required": getattr(item,"payment_required",None),
+                "status": getattr(item,"status",None),
+            })
+        elif str(item).strip():
+            result.append({"title": str(item).strip()})
+    return result
+
+def _add_two_column_details(story, rows, normal_style, small_style):
+    rendered=[]
+    for label,value in rows:
+        if value in (None,"",[],{}):
+            continue
+        rendered.append([Paragraph(f"<b>{_safe_text(label)}</b>",small_style),Paragraph(_safe_text(value),normal_style)])
+    if not rendered:
+        return
+    table=Table(rendered,colWidths=[45*mm,125*mm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(0,-1),LIGHTER),("BOX",(0,0),(-1,-1),0.6,BORDER),
+        ("INNERGRID",(0,0),(-1,-1),0.25,BORDER),("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),7),("RIGHTPADDING",(0,0),(-1,-1),7),
+        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+    ]))
+    story.append(table)
+
+def _add_milestone_table(story, items, table_header_style, feature_name_style, feature_description_style):
+    rows=[[Paragraph("<b>MILESTONE</b>",table_header_style),Paragraph("<b>DELIVERABLE / DESCRIPTION</b>",table_header_style),Paragraph("<b>TIMELINE / DUE</b>",table_header_style)]]
+    for index,item in enumerate(items,start=1):
+        title=item.get("title") or item.get("name") or item.get("label") or f"Milestone {index}"
+        description=item.get("description") or item.get("deliverable") or item.get("details") or ""
+        deliverables=item.get("deliverables")
+        if deliverables:
+            extra=", ".join(_normalise_list(deliverables))
+            description=f"{description} — {extra}" if description else extra
+        timing=item.get("timeline") or item.get("duration") or item.get("week") or item.get("phase") or _format_date_value(item.get("due_date")) or "—"
+        rows.append([Paragraph(_safe_text(title),feature_name_style),Paragraph(_safe_text(description or "—"),feature_description_style),Paragraph(_safe_text(timing),feature_description_style)])
+    table=Table(rows,colWidths=[43*mm,87*mm,40*mm],repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),PRIMARY),("BOX",(0,0),(-1,-1),0.6,BORDER),
+        ("INNERGRID",(0,0),(-1,-1),0.25,BORDER),("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),6),("RIGHTPADDING",(0,0),(-1,-1),6),
+        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+    ]))
+    story.append(table)
+
+def _add_payment_milestone_table(story, items, currency, table_header_style, feature_name_style, feature_description_style, price_style):
+    rows=[[Paragraph("<b>MILESTONE</b>",table_header_style),Paragraph("<b>PAYMENT</b>",table_header_style),Paragraph("<b>AMOUNT</b>",table_header_style),Paragraph("<b>DUE / STATUS</b>",table_header_style)]]
+    for index,item in enumerate(items,start=1):
+        title=item.get("title") or item.get("name") or f"Milestone {index}"
+        percentage=item.get("percentage")
+        payment=f"{percentage}%" if percentage not in (None,"") else ("Required" if item.get("payment_required") else "—")
+        amount=item.get("amount")
+        due=_format_date_value(item.get("due_date"))
+        status=_humanize_key(item.get("status")) if item.get("status") else ""
+        due_status=" · ".join(x for x in (due,status) if x) or "—"
+        rows.append([Paragraph(_safe_text(title),feature_name_style),Paragraph(_safe_text(payment),feature_description_style),Paragraph(_safe_text(_format_money(amount,currency)) if amount not in (None,"") else "—",price_style),Paragraph(_safe_text(due_status),feature_description_style)])
+    table=Table(rows,colWidths=[60*mm,27*mm,42*mm,41*mm],repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),PRIMARY),("BOX",(0,0),(-1,-1),0.6,BORDER),
+        ("INNERGRID",(0,0),(-1,-1),0.25,BORDER),("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),6),("RIGHTPADDING",(0,0),(-1,-1),6),
+        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+    ]))
+    story.append(table)
+
 
 def _add_section_title(
     story,
@@ -1226,6 +1345,25 @@ def generate_proposal_pdf(proposal):
         )
 
         # ----------------------------------------------------
+        # QUOTATION DETAILS
+        # ----------------------------------------------------
+        quote_reference = quotation.get("tracking_reference") or quotation.get("reference") or quotation.get("id") or ""
+        quote_date = _format_date_value(quotation.get("created_at"))
+        quote_deadline = _format_date_value(quotation.get("deadline"))
+        quote_budget = quotation.get("budget")
+        detail_rows = [
+            ("Quotation / Tracking Reference", quote_reference),
+            ("Quotation Date", quote_date),
+            ("Deadline / Validity", quote_deadline),
+            ("Currency", currency),
+        ]
+        if quote_budget not in (None, ""):
+            detail_rows.append(("Client Budget", _format_money(quote_budget, currency)))
+        _add_section_title(story, "Quotation Details", heading_style)
+        _add_two_column_details(story, detail_rows, normal_style, small_style)
+        story.append(Spacer(1, 5 * mm))
+
+        # ----------------------------------------------------
         # QUOTATION SUMMARY
         # ----------------------------------------------------
 
@@ -1477,23 +1615,23 @@ def generate_proposal_pdf(proposal):
                 "total_price"
             )
 
-            description = (
-                item.get(
-                    "description"
-                )
-                or ""
-            )
-
+            description = item.get("description") or ""
+            category = item.get("category") or ""
+            specifications = item.get("specifications") or {}
+            spec_parts = []
+            if isinstance(specifications, dict):
+                spec_parts = [f"{_humanize_key(k)}: {v}" for k,v in specifications.items() if v not in (None,"",[],{})]
+            elif specifications:
+                spec_parts = _normalise_list(specifications)
+            meta_lines = []
+            if category:
+                meta_lines.append(f"Category: {category}")
+            if description:
+                meta_lines.append(description)
+            if spec_parts:
+                meta_lines.append("Specifications: " + "; ".join(spec_parts))
             product_text = Paragraph(
-                (
-                    f"<b>{_safe_text(name)}</b>"
-                    + (
-                        f"<br/><font size='7' color='#6B7280'>"
-                        f"{_safe_text(description)}</font>"
-                        if description
-                        else ""
-                    )
-                ),
+                f"<b>{_safe_text(name)}</b>" + (f"<br/><font size='7' color='#6B7280'>{_safe_text(' | '.join(meta_lines))}</font>" if meta_lines else ""),
                 quotation_product_style,
             )
 
@@ -2040,16 +2178,9 @@ def generate_proposal_pdf(proposal):
         # ----------------------------------------------------
 
         objectives = (
-            getattr(
-                proposal,
-                "objectives",
-                None,
-            )
-            or getattr(
-                proposal,
-                "project_objectives",
-                None,
-            )
+            getattr(proposal, "business_objectives", None)
+            or getattr(proposal, "objectives", None)
+            or getattr(proposal, "project_objectives", None)
             or []
         )
 
@@ -2061,7 +2192,7 @@ def generate_proposal_pdf(proposal):
 
             _add_section_title(
                 story,
-                "Project Objectives",
+                "Business Objectives",
                 heading_style,
             )
 
@@ -2360,6 +2491,54 @@ def generate_proposal_pdf(proposal):
                     small_style,
                 )
             )
+
+        # ----------------------------------------------------
+        # PROJECT DELIVERABLES
+        # ----------------------------------------------------
+        deliverable_items = _normalise_list(getattr(proposal, "deliverables", None))
+        if deliverable_items:
+            _add_section_title(story, "Project Deliverables", heading_style)
+            _add_bullet_list(story, deliverable_items, normal_style, bullet_style)
+
+        # ----------------------------------------------------
+        # IMPLEMENTATION TIMELINE
+        # ----------------------------------------------------
+        timeline_items = _normalise_rich_items(getattr(proposal, "timeline", None))
+        if timeline_items:
+            _add_section_title(story, "Implementation Timeline", heading_style)
+            _add_milestone_table(story, timeline_items, table_header_style, feature_name_style, feature_description_style)
+
+        # ----------------------------------------------------
+        # PROJECT MILESTONES
+        # ----------------------------------------------------
+        project_milestones = _normalise_rich_items(getattr(proposal, "milestones", None))
+        if project_milestones:
+            _add_section_title(story, "Project Milestones", heading_style)
+            _add_milestone_table(story, project_milestones, table_header_style, feature_name_style, feature_description_style)
+
+        # ----------------------------------------------------
+        # PAYMENT SCHEDULE
+        # ----------------------------------------------------
+        payment_milestones = _normalise_rich_items(getattr(proposal, "milestone_records", None))
+        if payment_milestones:
+            _add_section_title(story, "Payment Schedule", heading_style)
+            _add_payment_milestone_table(story, payment_milestones, getattr(proposal, "currency", None) or "NGN", table_header_style, feature_name_style, feature_description_style, price_style)
+
+        # ----------------------------------------------------
+        # ASSUMPTIONS
+        # ----------------------------------------------------
+        assumption_items = _normalise_list(getattr(proposal, "assumptions", None))
+        if assumption_items:
+            _add_section_title(story, "Assumptions", heading_style)
+            _add_bullet_list(story, assumption_items, normal_style, bullet_style)
+
+        # ----------------------------------------------------
+        # EXCLUSIONS / OUT OF SCOPE
+        # ----------------------------------------------------
+        exclusion_items = _normalise_list(getattr(proposal, "exclusions", None))
+        if exclusion_items:
+            _add_section_title(story, "Exclusions / Out of Scope", heading_style)
+            _add_bullet_list(story, exclusion_items, normal_style, bullet_style)
 
         # ----------------------------------------------------
         # PROJECT INVESTMENT
