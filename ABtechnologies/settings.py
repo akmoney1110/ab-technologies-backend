@@ -86,7 +86,16 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
 ]
-
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+    }
+}
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -133,7 +142,9 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
 }
+import os
 
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),

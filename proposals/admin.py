@@ -164,7 +164,7 @@ def pretty_json(value):
     except Exception:
         return str(value)
 
-
+import os
 def get_frontend_url():
     """
     Get the frontend application URL.
@@ -172,9 +172,8 @@ def get_frontend_url():
 
     return getattr(
         settings,
-        "FRONTEND_URL",
-        "http://localhost:5173",
-    ).rstrip("/")
+        frontend_url = settings.FRONTEND_URL)
+
 
 
 def get_client_proposal_url(proposal, request=None):

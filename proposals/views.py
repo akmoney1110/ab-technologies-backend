@@ -1052,9 +1052,7 @@ def admin_review(request, proposal_id):
 
     frontend_url = getattr(
         settings,
-        "FRONTEND_URL",
-        "http://localhost:5173"
-    ).rstrip("/")
+        frontend_url = settings.FRONTEND_URL)
 
     client_proposal_url = (
         f"{frontend_url}/proposals/"
