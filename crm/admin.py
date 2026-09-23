@@ -290,7 +290,7 @@ class ProcurementQuotationItemAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Audit",
+            "06 · Audit",
             {
                 "classes": ("collapse",),
                 "fields": (
@@ -410,10 +410,9 @@ class QuoteRequestAdmin(admin.ModelAdmin):
         "updated_at",
     )
 
-    autocomplete_fields = (
-        "lead",
-    )
-
+    # Use Django's normal select dropdown for Lead.
+    # This is intentionally NOT an autocomplete field so the dropdown
+    # opens and works without Select2/AJAX dependencies.
     inlines = (
         ProcurementQuotationItemInline,
     )
@@ -430,6 +429,9 @@ class QuoteRequestAdmin(admin.ModelAdmin):
     list_per_page = 50
     save_on_top = True
     empty_value_display = "—"
+    list_display_links = ("title", "client_display")
+    list_max_show_all = 200
+    preserve_filters = True
 
     # Existing custom template that adds the Generate Proposal submit button.
     change_form_template = "admin/crm/quoterequest/change_form.html"
@@ -440,8 +442,11 @@ class QuoteRequestAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (
-            "Client & Request",
+            "01 · Client & Request",
             {
+                "description": (
+                    "Select the client lead and define exactly what the client is requesting."
+                ),
                 "fields": (
                     "id",
                     "lead",
@@ -453,8 +458,11 @@ class QuoteRequestAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Commercial Requirements",
+            "02 · Commercial Requirements",
             {
+                "description": (
+                    "Set the client's budget, quotation currency and expected deadline."
+                ),
                 "fields": (
                     "budget",
                     "currency",
@@ -463,7 +471,7 @@ class QuoteRequestAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Quotation Overview",
+            "03 · Quotation Overview",
             {
                 "fields": (
                     "pricing_status",
@@ -476,8 +484,12 @@ class QuoteRequestAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Financial Summary",
+            "04 · Financial Summary",
             {
+                "description": (
+                    "Subtotal and final total are calculated by Django from the quotation items. "
+                    "Discount, tax and delivery can be adjusted here."
+                ),
                 "fields": (
                     "subtotal",
                     "discount",
@@ -488,8 +500,11 @@ class QuoteRequestAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Workflow & Tracking",
+            "05 · Workflow & Tracking",
             {
+                "description": (
+                    "Manage the quotation lifecycle and permanent procurement tracking reference."
+                ),
                 "fields": (
                     "status",
                     "tracking_reference",
@@ -536,12 +551,18 @@ class QuoteRequestAdmin(admin.ModelAdmin):
 
         if secondary and secondary != name:
             return format_html(
-                '<strong>{}</strong><br><span style="color:#64748b;font-size:11px;">{}</span>',
+                '<div style="line-height:1.35;">'
+                '<strong style="font-size:13px;color:var(--body-fg);">{}</strong>'
+                '<br><span style="color:#64748b;font-size:11px;">{}</span>'
+                '</div>',
                 name,
                 secondary,
             )
 
-        return name
+        return format_html(
+            '<strong style="font-size:13px;">{}</strong>',
+            name,
+        )
 
     @admin.display(description="Items", ordering="_admin_item_count")
     def item_count(self, obj):
