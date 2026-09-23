@@ -1617,19 +1617,22 @@ def client_proposal_api(request, public_token):
         )
 
     # ========================================================
-    # RECALCULATE PROPOSAL TOTAL
+    # FINANCIAL SOURCE OF TRUTH
     # ========================================================
-
-    total = recalculate_proposal_total(
-        proposal
-    )
-
-    # Refresh so the serialized proposal contains
-    # the latest calculated values.
-    proposal.refresh_from_db()
-
-    # ========================================================
-    # QUOTATION
+    #
+    # IMPORTANT:
+    #
+    # Procurement proposal:
+    #     QuoteRequest is the financial source of truth.
+    #
+    # Software / service proposal:
+    #     Approved ProposalFeature records are the financial
+    #     source of truth.
+    #
+    # We MUST NOT run recalculate_proposal_total() for a
+    # procurement proposal because that helper is feature-based
+    # and can overwrite proposal.total_price with 0.00 when the
+    # procurement proposal has no priced ProposalFeature rows.
     # ========================================================
 
     quote_request = getattr(
@@ -1637,6 +1640,81 @@ def client_proposal_api(request, public_token):
         "quote_request",
         None,
     )
+
+    if quote_request is not None:
+
+        # ----------------------------------------------------
+        # PROCUREMENT
+        # ----------------------------------------------------
+        #
+        # The quotation has already been priced by the server.
+        # client_update_quotation() is responsible for changing
+        # saved quantities / included items and recalculating the
+        # quotation.
+        #
+        # Here we simply synchronize Proposal.total_price with
+        # the CURRENT SAVED quotation total.
+        # ----------------------------------------------------
+
+        quotation_total = (
+            quote_request.total
+            if quote_request.total is not None
+            else 0
+        )
+
+        quotation_currency = (
+            quote_request.currency
+            or proposal.currency
+            or "NGN"
+        )
+
+        update_fields = []
+
+        if proposal.total_price != quotation_total:
+            proposal.total_price = quotation_total
+            update_fields.append("total_price")
+
+        if proposal.currency != quotation_currency:
+            proposal.currency = quotation_currency
+            update_fields.append("currency")
+
+        if update_fields:
+            update_fields.append("updated_at")
+
+            proposal.save(
+                update_fields=update_fields
+            )
+
+        total = quotation_total
+
+    else:
+
+        # ----------------------------------------------------
+        # SOFTWARE / SERVICE
+        # ----------------------------------------------------
+
+        total = recalculate_proposal_total(
+            proposal
+        )
+
+    # Refresh after the financial calculation/synchronization so
+    # everything below is serialized from the latest database state.
+    proposal.refresh_from_db()
+
+    # Refresh the related quotation too. refresh_from_db() on the
+    # Proposal does not refresh an already-loaded related object.
+    quote_request = getattr(
+        proposal,
+        "quote_request",
+        None,
+    )
+
+    if quote_request is not None:
+        quote_request.refresh_from_db()
+
+    # ========================================================
+    # QUOTATION
+    # ========================================================
 
     quotation = serialize_quotation(
         quote_request
