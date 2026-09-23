@@ -16,7 +16,7 @@ from .pricing import (
 )
 
 
-MODEL_NAME = "gemini-3.1-flash-lite"
+MODEL_NAME = "gemini-2.5-flash"
 
 
 # ============================================================
