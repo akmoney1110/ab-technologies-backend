@@ -281,31 +281,78 @@ def _get_quotation_from_proposal(proposal):
 
 def _get_screen_items(proposal):
     """
-    Normalize screens into:
+    Normalize proposal screens into a consistent structure:
 
         {
-            name,
-            description,
-            purpose
+            "name": "...",
+            "description": "...",
+            "purpose": "..."
         }
 
-    Handles both simple strings and dictionaries.
+    Supports:
+        - Django RelatedManager
+        - Django QuerySet
+        - ProposalScreen model instances
+        - dictionaries
+        - strings
+        - lists / tuples
+        - legacy proposed_screens / screen_list values
+
+    The function is intentionally defensive because proposal screen data
+    may come from either persisted database records or older JSON-style
+    proposal data.
     """
 
-    screens = (
-        getattr(proposal, "screens", None)
-        or getattr(
+    # --------------------------------------------------------
+    # 1. FIND THE SCREEN SOURCE
+    # --------------------------------------------------------
+
+    screens = getattr(
+        proposal,
+        "screens",
+        None,
+    )
+
+    if screens is None:
+        screens = getattr(
             proposal,
             "proposed_screens",
             None,
         )
-        or getattr(
+
+    if screens is None:
+        screens = getattr(
             proposal,
             "screen_list",
             None,
         )
-        or []
-    )
+
+    if screens is None:
+        screens = []
+
+    # --------------------------------------------------------
+    # 2. HANDLE DJANGO RELATED MANAGER / QUERYSET
+    # --------------------------------------------------------
+    #
+    # Example:
+    #
+    #     proposal.screens
+    #
+    # may be a RelatedManager rather than an iterable list.
+    #
+    # Calling .all() converts it into a QuerySet that can safely
+    # be iterated.
+    # --------------------------------------------------------
+
+    if hasattr(screens, "all") and callable(screens.all):
+        try:
+            screens = screens.all()
+        except Exception:
+            screens = []
+
+    # --------------------------------------------------------
+    # 3. HANDLE STRING VALUES
+    # --------------------------------------------------------
 
     if isinstance(screens, str):
         screens = [
@@ -314,21 +361,49 @@ def _get_screen_items(proposal):
             if line.strip()
         ]
 
+    # --------------------------------------------------------
+    # 4. HANDLE A SINGLE DICTIONARY
+    # --------------------------------------------------------
+
     if isinstance(screens, dict):
         screens = [screens]
 
+    # --------------------------------------------------------
+    # 5. MAKE SURE THE VALUE IS ITERABLE
+    # --------------------------------------------------------
+
+    try:
+        screen_list = list(screens)
+    except TypeError:
+        screen_list = [screens] if screens else []
+
     result = []
 
+    # --------------------------------------------------------
+    # 6. NORMALIZE EACH SCREEN
+    # --------------------------------------------------------
+
     for index, screen in enumerate(
-        screens,
+        screen_list,
         start=1,
     ):
+
+        name = ""
+        description = ""
+        purpose = ""
+
+        # ====================================================
+        # DICTIONARY SCREEN
+        # ====================================================
+
         if isinstance(screen, dict):
 
             name = (
                 screen.get("name")
                 or screen.get("title")
                 or screen.get("label")
+                or screen.get("screen_name")
+                or screen.get("page_name")
                 or f"Screen {index}"
             )
 
@@ -336,34 +411,103 @@ def _get_screen_items(proposal):
                 screen.get("description")
                 or screen.get("details")
                 or screen.get("content")
+                or screen.get("summary")
                 or ""
             )
 
             purpose = (
                 screen.get("purpose")
                 or screen.get("function")
+                or screen.get("objective")
                 or ""
             )
 
+        # ====================================================
+        # DJANGO MODEL INSTANCE
+        # ====================================================
+        #
+        # ProposalScreen objects fall here.
+        # We intentionally use getattr() rather than depending
+        # on one exact model definition.
+        # ====================================================
+
+        elif hasattr(screen, "_meta"):
+
+            name = (
+                getattr(screen, "name", None)
+                or getattr(screen, "title", None)
+                or getattr(screen, "label", None)
+                or getattr(screen, "screen_name", None)
+                or getattr(screen, "page_name", None)
+                or f"Screen {index}"
+            )
+
+            description = (
+                getattr(screen, "description", None)
+                or getattr(screen, "details", None)
+                or getattr(screen, "content", None)
+                or getattr(screen, "summary", None)
+                or ""
+            )
+
+            purpose = (
+                getattr(screen, "purpose", None)
+                or getattr(screen, "function", None)
+                or getattr(screen, "objective", None)
+                or ""
+            )
+
+        # ====================================================
+        # SIMPLE STRING / OTHER VALUE
+        # ====================================================
+
         else:
-            name = str(screen)
-            description = ""
-            purpose = ""
+
+            name = str(screen).strip()
+
+            if not name:
+                name = f"Screen {index}"
+
+        # ----------------------------------------------------
+        # 7. CLEAN VALUES
+        # ----------------------------------------------------
+
+        name = str(
+            name or f"Screen {index}"
+        ).strip()
+
+        description = str(
+            description or ""
+        ).strip()
+
+        purpose = str(
+            purpose or ""
+        ).strip()
+
+        # ----------------------------------------------------
+        # 8. SKIP COMPLETELY EMPTY ENTRIES
+        # ----------------------------------------------------
+
+        if not (
+            name
+            or description
+            or purpose
+        ):
+            continue
+
+        # ----------------------------------------------------
+        # 9. ADD NORMALIZED SCREEN
+        # ----------------------------------------------------
 
         result.append(
             {
-                "name": str(name).strip(),
-                "description": str(
-                    description
-                ).strip(),
-                "purpose": str(
-                    purpose
-                ).strip(),
+                "name": name,
+                "description": description,
+                "purpose": purpose,
             }
         )
 
     return result
-
 
 def _add_section_title(
     story,
