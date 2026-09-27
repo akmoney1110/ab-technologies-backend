@@ -602,7 +602,7 @@ class ProposalFeatureInline(admin.TabularInline):
 
     form = ProposalFeatureAdminForm
 
-    extra = 1
+    extra = 0
 
     fields = (
         "feature_key",
