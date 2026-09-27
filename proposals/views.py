@@ -1236,8 +1236,7 @@ def serialize_feature(feature):
         "category": feature.category,
         "complexity": feature.complexity,
         "quantity": feature.quantity,
-        "unit_price": str(feature.unit_price),
-        "total_price": str(feature.total_price),
+        
         "scope_status": feature.scope_status,
         "status": feature.status,
         "source": feature.source,
