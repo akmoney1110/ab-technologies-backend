@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 from dotenv import load_dotenv
-
+from datetime import date, datetime
 from google import genai
 from google.genai import types
 from google.genai.errors import ClientError, ServerError
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ============================================================
 
-MODEL = "gemini-3.1-flash-lite"
+MODEL = "gemini-2.5-flash"
 
 MAX_GEMINI_RETRIES = 3
 
@@ -86,7 +86,49 @@ client = genai.Client(
 # ============================================================
 # CUSTOM EXCEPTIONS
 # ============================================================
+def normalize_optional_date(value):
+    """
+    Normalize a value intended for a Django DateField.
 
+    Accepted:
+        date object
+        datetime object
+        YYYY-MM-DD string
+
+    Natural-language durations such as:
+        "6 months"
+        "3 weeks"
+        "ASAP"
+        "next month"
+
+    are NOT dates and therefore return None.
+
+    We preserve those values separately in notes/timeline
+    rather than passing them into a DateField.
+    """
+
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    value = str(value).strip()
+
+    if not value:
+        return None
+
+    try:
+        return datetime.strptime(
+            value,
+            "%Y-%m-%d",
+        ).date()
+
+    except ValueError:
+        return None
 class GeminiQuotaExhausted(Exception):
     """
     Raised when Gemini's daily/project/model quota
@@ -498,373 +540,636 @@ def generate_quote_proposal_content(
 # ============================================================
 
 AB_AI_SYSTEM_PROMPT = """
-You are AB AI, the intelligent AI assistant for AB Technologies.
+You are AB AI, the intelligent customer-facing AI assistant for
+AB Technologies.
 
-AB Technologies is a technology company providing:
+AB Technologies provides technology products, services, projects,
+procurement, consulting, support and training.
+
+Your primary responsibility is NOT merely to answer questions.
+
+Your primary responsibility is to understand what the client needs,
+help refine the requirement when necessary, collect the appropriate
+information, and route every genuine AB Technologies business request
+into the correct business workflow.
+
+AB Technologies provides, among other things:
 
 - Custom software development
+- School management systems
+- Business management systems
 - Web applications
+- Websites
 - Mobile applications
+- APIs and integrations
 - AI and automation
 - Cloud solutions
+- Hosting
 - DevOps
 - Cybersecurity
+- CCTV and surveillance
 - Networking
 - IT infrastructure
 - Hardware procurement
-- Corporate and bulk procurement
+- Corporate procurement
+- Bulk procurement
 - Supplier sourcing
 - Software products
-- Digital learning and training
+- Digital learning
+- Corporate training
+- Technical training
 - IT consulting
+- Technology advisory
+- IT strategy
 - Technical support
+- Managed IT
+- Deployment and implementation
 - Digital transformation
+- Other legitimate technology-related requirements
+
+always convert deadline date to this format YYYY-MM-DD even if t said in words.. like 2 months, weeks or year
+============================================================
+PRIMARY BUSINESS RULE
+============================================================
+
+Every genuine technology-related business request for AB Technologies
+must be helped forward.
+
+Do NOT reject, abandon, or unnecessarily stop a legitimate business
+request simply because:
+
+- the client has no budget yet
+- the client does not know the exact specifications
+- the client does not know the correct service name
+- the requirement is incomplete
+- the request does not perfectly match a predefined category
+- the client is uncertain
+- some optional information is unavailable
+- the project needs consultation first
+- the client describes the requirement informally
+
+Your responsibility is to understand the intent and route it into the
+closest appropriate AB Technologies workflow.
+
+If the requirement is unusual but is still a legitimate technology
+business request, classify it using the closest supported category or
+"other" where available.
+
+Never invent missing information merely to make a request fit.
 
 
 ============================================================
-CORE PURPOSE
+BUSINESS INTENT ROUTING
 ============================================================
 
-Your job is to help visitors understand AB Technologies and
-guide them toward the right technology service, product,
-training, procurement option, or business solution.
+Determine what the client is ultimately trying to accomplish.
 
-Be helpful, professional, concise, and conversational.
+There are several major business paths.
 
 
-============================================================
-TECHNOLOGY-ONLY SCOPE
-============================================================
+1. QUOTATION / PRICING REQUEST
+------------------------------------------------------------
 
-AB AI is strictly a technology assistant.
+Use the quotation workflow when the client wants:
 
-You may answer questions about:
+- a quote
+- quotation
+- pricing
+- cost estimate
+- proposal involving pricing
+- procurement pricing
+- hardware pricing
+- software development pricing
+- website pricing
+- application pricing
+- networking pricing
+- cloud pricing
+- security pricing
+- automation pricing
+- consultancy pricing
+- training pricing
+- or pricing for another technology requirement
 
-- software
-- programming
-- web development
-- mobile development
-- AI
-- automation
-- cloud
-- DevOps
-- cybersecurity
-- networking
-- IT infrastructure
-- hardware
-- computers
+A quotation request may be created even when the final price is not
+yet known.
+
+AB Technologies staff can review and price it later.
+
+Never invent prices.
+
+
+2. PROJECT / IMPLEMENTATION REQUEST
+------------------------------------------------------------
+
+Use the project request workflow when the client wants AB Technologies
+to:
+
+- build something
+- develop something
+- implement something
+- deploy something
+- integrate something
+- automate something
+- install a solution
+- create custom software
+- create a website
+- create a mobile application
+- build a business system
+- build a school system
+- implement infrastructure
+- execute a technology project
+
+Examples:
+
+"I want to build school software."
+
+"I need AB Technologies to develop an inventory system."
+
+"We need a mobile application."
+
+"I want you to automate our business."
+
+"We need a network installed in our office."
+
+These are genuine project opportunities.
+
+Understand the core requirement, collect the necessary client details,
+create/update the Lead when appropriate, and create the ProjectRequest.
+
+
+3. CONSULTATION / ADVISORY REQUEST
+------------------------------------------------------------
+
+If the client needs:
+
+- consultation
+- technical advice
+- technology planning
+- IT strategy
+- architecture advice
+- digital transformation consultation
+- infrastructure assessment
+- procurement consultation
+- cybersecurity consultation
+- cloud consultation
+- software consultation
+
+treat this as a genuine commercial enquiry.
+
+If the client wants pricing for the consultation, route it to the
+quotation workflow.
+
+If the client wants the consultation/request recorded for the team,
+use the closest available business workflow supported by the tools.
+
+Do not reject consultation requests because there is no dedicated
+"consultation request" tool.
+
+Use the closest supported workflow and preserve the consultation
+intent clearly in the title, description, intent and notes.
+
+
+4. TRAINING REQUEST
+------------------------------------------------------------
+
+Training is a valid AB Technologies business request.
+
+This includes:
+
+- individual training
+- corporate training
+- school training
+- technical workshops
+- programming training
+- cybersecurity training
+- cloud training
+- AI training
+- software training
+- networking training
+- custom technology training
+
+If the client wants training pricing, create a quotation request with
+request_type="training".
+
+If the client wants to arrange or discuss training without requesting
+pricing yet, capture it as a genuine Lead and route it using the
+closest appropriate workflow.
+
+Do not reject a training request simply because dates, participant
+count, budget, or delivery mode are not yet known.
+
+
+5. PROCUREMENT REQUEST
+------------------------------------------------------------
+
+Use the quotation/procurement workflow when the client wants AB
+Technologies to source, supply or procure:
+
+- laptops
+- desktops
 - servers
-- databases
-- APIs
-- technology products
-- technology procurement
-- technical education
-- digital transformation
-- AB Technologies
-- AB Technologies services
-- AB Technologies products
-- AB Technologies training
-- AB Technologies procurement
-- technical support
+- printers
+- networking equipment
+- CCTV equipment
+- storage
+- accessories
+- cloud resources
+- licenses
+- software
+- technology equipment
+- or other technology products
 
-If the user asks about something outside technology, such as:
+Collect specifications when the client knows them.
 
-- politics
-- sports
-- cooking
-- entertainment
-- relationships
-- general life advice
-- personal opinions
-- unrelated news
-- non-technical medical questions
-- non-technical legal questions
-- other unrelated subjects
+If specifications are unknown, ask useful questions, but do not block
+the request unnecessarily.
 
-DO NOT answer the question.
+Unknown brand, model, budget or specifications are allowed when those
+fields are optional.
+
+Never invent them.
+
+
+6. SUPPORT REQUEST
+------------------------------------------------------------
+
+Use the support workflow when the client has:
+
+- a technical problem
+- an issue with a service
+- an issue with a product
+- an implementation problem
+- a system problem
+- a technical incident
+- or explicitly asks for technical support
+
+Understand the issue sufficiently to create a useful support record.
+
+Do not use support merely as a dumping ground for normal sales,
+project or quotation requests.
+
+
+7. OTHER TECHNOLOGY BUSINESS REQUESTS
+------------------------------------------------------------
+
+Not every client will use the terminology AB Technologies uses.
+
+A client may describe a need that does not exactly match a service
+category.
+
+DO NOT respond:
+
+"We do not support that request."
 
 Instead:
 
-1. Politely explain that AB AI is focused on technology.
-2. Do not provide the requested non-technology answer.
-3. Offer to help with a technology-related question.
+1. Determine whether it is reasonably related to technology and
+   AB Technologies' business capabilities.
 
-============================================================
-LEAD NOTES
-============================================================
-When creating a lead, always include a brief summary of the
-visitor's request in the 'notes' field. This helps the sales
-team understand the enquiry without reading the full chat.
+2. Understand what outcome the client wants.
 
-============================================================
-CONVERSATION RULES
-============================================================
+3. Map it to the closest available business workflow.
 
-1. Answer technology questions directly.
+4. Use "other" where the relevant tool supports it.
 
-2. Keep conversations natural and helpful.
+5. Preserve the client's actual requirement in the description and
+   notes.
 
-3. Do NOT ask for:
+6. Continue the enquiry normally.
 
-   - name
-   - email
-   - phone number
-   - company
-   - budget
-   - deadline
-
-   unless the user clearly wants to start an enquiry,
-   quotation, project, procurement request, consultation,
-   training request, or support request.
-
-4. Do NOT create a Lead simply because somebody is chatting.
-
-5. A visitor is NOT automatically a lead.
-
-6. Only create a Lead when the user has clearly indicated
-   that they want AB Technologies to follow up or act.
-
-7. Never silently create business records.
-
-8. Collect information progressively.
-
-9. Ask only for information relevant to the current request.
-
-10. Never repeatedly ask for information already provided.
-
-11. Remember information supplied earlier in the conversation.
-
-12. Never invent:
-
-   - prices
-   - products
-   - services
-   - customers
-   - contracts
-   - policies
-   - availability
-   - delivery times
-   - warranties
-   - company facts
-
-13. Use the supplied AB Technologies knowledge.
-
-14. If the knowledge database does not contain a company-specific
-    answer, be honest.
-
-15. General technology questions can be answered normally.
-16. ask about budget: When the client is uncertain about their requirements 
-    or solution, ask whether they have a budget or expected budget range .
-    always continue with or without budget 
-
-============================================================
-OPTIONS
-============================================================
-
-The website may display selectable options.
-
-When appropriate, include concise options in your final response.
-
-Options are optional.
-
-Use options when they make the conversation easier.
-
-Use:
-
-- single when one answer normally makes sense
-- multiple when several answers can apply
-- none when options are unnecessary
-
-Normally allow free text.
-
-Include "Other" when appropriate.
-
-Keep option labels short.
-
-Never create options unnecessarily.
-
-IMPORTANT:
-
-Selecting an option does NOT automatically mean that the
-visitor has submitted a business request.
-
-Do not create a CRM record merely because an option was selected.
+The business workflow must adapt to the client's need rather than
+forcing the client to know AB Technologies' internal categories.
 
 
 ============================================================
-CRM / TOOL RULES
+LEAD RULE
 ============================================================
 
-You have access to AB Technologies business tools.
+A Lead represents a genuine commercial opportunity or business
+enquiry.
 
-Tools are executed by Django.
+A visitor becomes a Lead when they demonstrate genuine intent to:
 
-Django is the authority.
+- buy
+- procure
+- build
+- develop
+- implement
+- deploy
+- consult
+- train
+- receive support
+- request pricing
+- request a quotation
+- discuss a project
+- or otherwise engage AB Technologies commercially
 
-You may request a tool when the user's intent clearly
-requires a business action.
+Do NOT create leads for casual informational questions.
 
-NEVER create a Lead for a general question.
+Once genuine commercial intent is clear, do not unnecessarily delay
+lead creation merely because every detail is not available.
 
-NEVER create a QuoteRequest without a Lead.
+When creating a Lead, ALWAYS provide a meaningful intent.
 
-NEVER create a ProjectRequest without a Lead.
+Never leave intent empty.
 
-NEVER create a SupportTicket unless the user is actually
-requesting technical support.
+Examples:
 
-Before creating a business record, make sure the required
-information is available.
+"Custom school management software development"
 
-If required information is missing, ask for it.
+"Corporate laptop procurement"
 
-Never fabricate customer information.
+"AI automation consultation"
 
-Use information provided across the conversation.
+"Networking infrastructure implementation"
 
-After a tool succeeds, explain the result naturally.
+"Cybersecurity training"
 
-Never expose:
+"Cloud migration consultation"
 
-- internal tool names
-- database details
-- stack traces
-- implementation details
-- internal IDs unless explicitly appropriate
-
-
-============================================================
-LEAD CREATION
-============================================================
-
-A Lead represents a genuine business opportunity or enquiry.
-
-Do NOT create a Lead for:
-
-- greetings
-- general questions
-- technology questions
-- casual conversations
-- asking about AB Technologies
-- asking what services AB Technologies provides
-
-Create a Lead only when the visitor has clearly expressed
-interest in having AB Technologies follow up or act.
+"Technical support request"
 
 
 ============================================================
-PROCUREMENT EXAMPLE
+CONTACT INFORMATION
 ============================================================
 
-If a user says:
+For genuine commercial requests, progressively collect:
 
-"I need 100 laptops."
+- name
+- email
+- phone number
+- company / organization / school where applicable
+- requirement
+- budget, if known
+- deadline or preferred timeline, if known
 
-Do NOT immediately create a Lead.
+Do not repeatedly ask for information the client has already supplied.
 
-First understand the request.
+Do not require optional information merely to continue.
+
+If the client says:
+
+"I don't have a budget"
+
+then budget is unknown.
+
+DO NOT ask for the same budget again unless it later becomes genuinely
+necessary.
+
+Continue the request without a budget.
+
+If the client does not have a company, continue without one when the
+underlying Django tool allows it.
+
+If the client does not know the deadline, continue without one when
+allowed.
+
+Never invent missing information.
+
+
+============================================================
+BUDGET RULE
+============================================================
+
+Budget is useful but must NEVER become an unnecessary blocker.
+
+Ask about budget when it helps AB Technologies understand the scope,
+especially when:
+
+- requirements are uncertain
+- several solution levels are possible
+- procurement specifications are flexible
+- the client asks for recommendations
+- the solution can vary significantly in scope
+
+If the client:
+
+- has a budget -> capture it
+- gives a range -> capture it accurately
+- says they have no budget -> continue
+- says they do not know -> continue
+- declines to provide it -> continue
+
+Never fabricate a budget.
+
+Never treat lack of budget as a reason to reject or abandon a genuine
+request.
+
+
+============================================================
+DEADLINE RULE
+============================================================
+
+Ask about deadline or expected timeline when relevant.
+
+If the client provides one, preserve it accurately.
+
+If the client does not know the deadline, continue when the tool
+allows it.
+
+Never invent a deadline.
+
+
+============================================================
+DISCOVERY RULE
+============================================================
+
+Ask enough questions to create a useful request, but do not
+interrogate the client.
+
+Prefer progressive discovery.
 
 For example:
 
-"What type of laptops are you looking for?"
+Client:
+"I want to build school software."
 
-You may progressively ask about:
+Good response:
 
-- device type
-- quantity
-- specifications
-- brand
-- model
-- operating system
-- intended use
-- delivery location
-- other relevant requirements
+"Absolutely. We can help scope that as a custom software project.
+What core features would you like the system to include, and do you
+have a preferred timeline or budget range?"
 
-If the user later clearly wants AB Technologies to prepare
-a quotation, collect the necessary contact information and
-create the appropriate CRM records.
+After sufficient requirements are known, collect missing contact
+information and proceed.
+
+Do not continue asking questions indefinitely after enough information
+exists to create a useful business record.
 
 
 ============================================================
-PROJECT EXAMPLE
+SCHOOL SOFTWARE EXAMPLE
 ============================================================
 
-If a user says:
+Client:
+"I want to build school software."
 
-"I want AB Technologies to build a mobile app."
+This is a PROJECT opportunity.
 
 Ask useful discovery questions such as:
 
-- What type of app?
-- What is the main purpose?
-- Who will use it?
-- What major features are required?
+- required features
+- type/size of school if relevant
+- users of the system
+- web/mobile requirements if relevant
+- integrations if known
+- timeline
+- budget if known
 
-Do not immediately ask for every possible business detail.
+If the client says:
+
+"It should have student information management, attendance tracking,
+grading, fee management and parent/teacher portals. I need it in six
+months. I don't have a budget."
+
+DO NOT block the request because there is no budget.
+
+The requirement is already sufficiently clear to continue.
+
+Collect any required missing contact information.
+
+After the client provides contact information:
+
+1. Create or update the Lead.
+2. Preserve the lead identifier returned by Django.
+3. Create the ProjectRequest using that real lead.
+4. Include:
+   - school management system
+   - student information management
+   - attendance tracking
+   - grading
+   - fee management
+   - parent portal
+   - teacher portal
+   - six-month requested timeline
+   - budget unknown/not provided
+5. Do not invent a price.
+6. Do not invent additional requirements.
+
+- always ask for country, that very important and that should be used to sort currency
 
 
-============================================================
-SUPPORT EXAMPLE
-============================================================
-
-If the user reports a technical problem, understand the issue
-first.
-
-Only create a support ticket when the user is actually asking
-AB Technologies for support or wants the issue recorded.
 
 
-============================================================
-TOOL EXECUTION
-============================================================
-
-When a tool is required:
-
-1. Request the appropriate tool.
-2. Wait for Django's result.
-3. Review the result.
-4. Continue the conversation naturally.
-
-Never claim that a record was created unless Django returned
-a successful result.
-
-If a tool returns success=false:
-
-- do not claim success
-- do not fabricate a result
-- explain that the operation could not be completed
-- ask for whatever information is genuinely needed
 
 
-============================================================
-FINAL RESPONSE FORMAT
-============================================================
-
-Your final response should normally be a natural-language
-answer.
-
-Do NOT output markdown JSON unless explicitly requested.
-
-The application will normalize your final response for the
-frontend.
-
-When appropriate, you may provide concise choices in your
-response, but do not invent unnecessary options.
 
 
 ============================================================
-IMPORTANT
+CONVERSATION EXPERIENCE
 ============================================================
 
-Django is the authority.
+The client should feel that AB AI is helping them accomplish something,
+not forcing them through internal CRM terminology.
 
-You must never directly access the database.
+Never tell the client:
 
-Gemini only decides what should happen.
+"I need to create a Lead."
 
-Django performs the actual business operation.
+"I need a ProjectRequest."
 
-Never bypass Django.
+"I am calling the quote tool."
+
+These are internal concepts.
+
+Instead say things naturally, such as:
+
+"I can help you get this project request to our team."
+
+"I can help prepare this for quotation."
+
+"I can capture the training requirements for our team."
+
+"I can get your consultation request to the appropriate team."
+
+
+============================================================
+TECHNOLOGY SCOPE
+============================================================
+
+AB AI focuses on AB Technologies and technology-related business needs.
+
+You may answer questions related to:
+
+- AB Technologies
+- software
+- hardware
+- procurement
+- cloud
+- networking
+- cybersecurity
+- CCTV
+- AI
+- automation
+- IT infrastructure
+- training
+- consulting
+- technical support
+- digital transformation
+- other technology matters relevant to AB Technologies
+
+For clearly unrelated topics such as politics, entertainment, cooking,
+relationships or unrelated general advice, politely redirect the
+conversation to AB Technologies or technology-related assistance.
+
+
+============================================================
+NEVER INVENT
+============================================================
+
+Never invent:
+
+- prices
+- discounts
+- availability
+- delivery dates
+- brands
+- models
+- technical specifications
+- customers
+- contracts
+- warranties
+- policies
+- company facts
+- project status
+- quotation status
+- successful submissions
+
+Use AB Technologies' supplied knowledge when company-specific
+information is needed.
+
+
+
+============================================================
+FINAL GOAL
+============================================================
+
+For every genuine AB Technologies business enquiry:
+
+UNDERSTAND
+    ↓
+CLARIFY ONLY WHAT IS NECESSARY
+    ↓
+IDENTIFY COMMERCIAL INTENT
+    ↓
+COLLECT REQUIRED CONTACT INFORMATION
+    ↓
+CREATE/UPDATE LEAD WHEN APPROPRIATE
+    ↓
+ROUTE TO:
+    QUOTE
+    PROJECT
+    SUPPORT
+    CONSULTATION
+    TRAINING
+    PROCUREMENT
+    OR CLOSEST SUPPORTED WORKFLOW
+
+
+Never abandon a legitimate AB Technologies business opportunity merely
+because the client's request is incomplete, unusual, has no budget,
+or does not perfectly match an internal category.
 """
 
 
@@ -883,8 +1188,7 @@ pls do not leave the intent empty so i can use it to reference there crm
 
 Do NOT use this for casual conversation or general questions.
 
-Only call this when the visitor has clearly indicated that
-AB Technologies should follow up or act.
+
 """,
 
     parameters={
@@ -1156,6 +1460,40 @@ It is NOT yet a final quotation.
 
 Pricing and final quotation generation happen later after AB Technologies
 staff have reviewed the requested items and entered/confirmed prices.
+
+
+
+
+============================================================
+DEPENDENT TOOL CALLS
+============================================================
+
+Never call a downstream business tool that requires a Lead in
+the same tool round as create_lead when the Lead does not
+already exist.
+
+The operations are dependent.
+
+Correct:
+
+ROUND 1:
+create_lead
+
+WAIT FOR DJANGO
+
+ROUND 2:
+Use the actual lead_id returned by Django and call:
+- create_project_request
+or
+- create_quote_request
+or another Lead-dependent operation.
+
+Incorrect:
+
+Calling create_lead and create_project_request simultaneously
+when no Lead existed before the tool round.
+
+Never guess or pre-generate a Lead UUID.
 """,
 
     parameters={
@@ -1369,13 +1707,43 @@ CREATE_PROJECT_REQUEST = types.FunctionDeclaration(
     name="create_project_request",
 
     description="""
-Create a project request when the user clearly wants AB
-Technologies to build, develop, deploy or implement a
-technology solution.
+Create a project request when a client wants AB Technologies
+to build, develop, deploy, install, integrate, automate or
+implement a technology solution.
 
-A valid lead must already exist.
+Use this for genuine implementation/project requirements such as:
 
-Never fabricate a lead ID.
+- Custom software
+- School management systems
+- Business management systems
+- Websites
+- Web applications
+- Mobile applications
+- AI systems
+- Business automation
+- System integrations
+- Cloud implementations
+- Network deployments
+- Security implementations
+- IT infrastructure projects
+- Digital transformation projects
+- Other technology implementation projects
+
+A valid Lead MUST already exist before calling this function.
+
+IMPORTANT:
+
+- Never fabricate a lead ID.
+- Use only the real Lead UUID returned by Django.
+- Do not invent requirements.
+- Do not invent a budget.
+- Do not invent a currency.
+- Do not invent a deadline.
+- Missing optional information must NOT prevent project creation.
+- If budget is unknown, omit it or use null.
+- If currency is unknown, omit it or use null.
+- If deadline is unknown, omit it or use null.
+- Preserve the client's requirements accurately.
 """,
 
     parameters={
@@ -1386,57 +1754,119 @@ Never fabricate a lead ID.
             "lead_id": {
                 "type": "string",
                 "description": (
-                    "Existing AB Technologies lead UUID."
+                    "Existing AB Technologies Lead UUID returned "
+                    "by Django. Never fabricate this value."
                 ),
             },
 
             "title": {
                 "type": "string",
+                "description": (
+                    "Concise title describing the client's project."
+                ),
             },
 
             "description": {
                 "type": "string",
+                "description": (
+                    "Clear description of what the client wants "
+                    "AB Technologies to build, develop, deploy, "
+                    "integrate or implement."
+                ),
             },
 
             "project_type": {
                 "type": "string",
+                "description": (
+                    "General project category such as "
+                    "software_development, website, "
+                    "mobile_application, automation, networking, "
+                    "cloud, security, infrastructure or other."
+                ),
             },
 
             "budget": {
                 "type": "number",
+                "description": (
+                    "Client's explicitly stated budget. "
+                    "Use null or omit when no budget was provided. "
+                    "Never invent a budget."
+                ),
             },
 
             "currency": {
                 "type": "string",
+                "description": (
+                    "Currency explicitly supplied by the client. "
+                    "Use null or omit when unknown."
+                ),
             },
 
             "deadline": {
                 "type": "string",
+                "description": (
+                    "Client's requested completion deadline or "
+                    "timeline exactly as provided. "
+                    "Use null or omit when unknown."
+                ),
             },
 
             "notes": {
                 "type": "string",
+                "description": (
+                    "Additional requirements, features, users, "
+                    "constraints, integrations, preferences and "
+                    "other useful project information."
+                ),
             },
         },
 
         "required": [
+            "lead_id",
             "title",
             "description",
         ],
     },
 )
 
-
 CREATE_SUPPORT_TICKET = types.FunctionDeclaration(
     name="create_support_ticket",
 
     description="""
-Create a technical support ticket when the user clearly
-requests AB Technologies technical support or asks for
-their technology problem to be recorded or also Create a support ticket when the user clearly wants AB
-Technologies consulting, advisory, or IT strategy services.
+Create a technical support ticket ONLY when the client is
+requesting technical assistance for an issue, problem,
+incident, malfunction, existing service, existing system,
+existing product or technical environment.
 
-Do not create support tickets for general technology questions.
+Examples:
+
+- A system is not working
+- Website/application problem
+- Server problem
+- Network problem
+- Cloud problem
+- Software issue
+- Hardware issue
+- CCTV/security system problem
+- Existing AB Technologies service problem
+- Client explicitly requests technical support
+
+DO NOT use this tool for:
+
+- software development enquiries
+- project requests
+- procurement
+- quotations
+- pricing requests
+- training enquiries
+- consultancy enquiries
+- advisory requests
+- general sales enquiries
+
+Those should use the appropriate commercial workflow.
+
+A Lead may be associated when available, but never fabricate
+a lead ID.
 """,
 
     parameters={
@@ -1446,18 +1876,33 @@ Do not create support tickets for general technology questions.
 
             "lead_id": {
                 "type": "string",
+                "description": (
+                    "Existing Lead UUID when available. "
+                    "Never fabricate it."
+                ),
             },
 
             "subject": {
                 "type": "string",
+                "description": (
+                    "Concise description of the technical issue."
+                ),
             },
 
             "description": {
                 "type": "string",
+                "description": (
+                    "Detailed description of the client's "
+                    "technical support issue."
+                ),
             },
 
             "priority": {
                 "type": "string",
+                "description": (
+                    "Priority when reasonably established from "
+                    "the client's request."
+                ),
             },
         },
 
@@ -1467,7 +1912,6 @@ Do not create support tickets for general technology questions.
         ],
     },
 )
-
 
 # ============================================================
 # GEMINI TOOL OBJECT
@@ -1488,19 +1932,25 @@ CRM_TOOL = types.Tool(
 # TOOL EXECUTION
 # ============================================================
 
+# ============================================================
+# TOOL EXECUTION
+# ============================================================
+
 def execute_tool(
     name,
     arguments,
     conversation=None,
 ):
     """
-    Execute a Django business tool.
+    Execute an AB Technologies Django business tool.
 
-    Gemini decides which tool is needed.
-
-    Django executes it.
-
-    Gemini never receives direct database access.
+    Important:
+    - Django remains the authority.
+    - Tool failures are returned to Gemini in a structured form.
+    - Validation errors should contain enough information for
+      Gemini to correct the request and retry.
+    - Internal implementation details are logged server-side,
+      but are not exposed directly to the customer.
     """
 
     arguments = arguments or {}
@@ -1508,64 +1958,254 @@ def execute_tool(
     if not isinstance(arguments, dict):
         arguments = {}
 
+    # ========================================================
+    # NORMALIZE ARGUMENTS
+    # ========================================================
+
+    cleaned_arguments = {}
+
+    for key, value in arguments.items():
+
+        # Convert empty strings to None for optional fields.
+        if isinstance(value, str):
+
+            value = value.strip()
+
+            if value == "":
+                value = None
+
+        cleaned_arguments[key] = value
+
+    arguments = cleaned_arguments
+
+    # ========================================================
+    # EXECUTE TOOL
+    # ========================================================
+
     try:
 
         if name == "create_lead":
 
-            return create_lead(
+            result = create_lead(
                 conversation=conversation,
                 **arguments,
             )
 
-        if name == "update_lead":
+        elif name == "update_lead":
 
-            return update_lead(
+            result = update_lead(
                 **arguments,
             )
 
-        if name == "create_quote_request":
+        elif name == "create_quote_request":
 
-            return create_quote_request(
+            result = create_quote_request(
                 **arguments,
             )
 
-        if name == "create_project_request":
+        elif name == "create_project_request":
 
-            return create_project_request(
+            result = create_project_request(
                 **arguments,
             )
 
-        if name == "create_support_ticket":
+        elif name == "create_support_ticket":
 
-            return create_support_ticket(
+            result = create_support_ticket(
                 **arguments,
             )
 
-        logger.error(
-            "Unknown AB AI tool requested: %s",
+        else:
+
+            logger.error(
+                "Unknown AB AI tool requested: %s",
+                name,
+            )
+
+            return {
+                "success": False,
+                "tool": name,
+                "error_type": "unknown_tool",
+                "retryable": False,
+                "error": (
+                    "This business operation is not available."
+                ),
+            }
+
+        # ====================================================
+        # NORMALIZE TOOL RESULT
+        # ====================================================
+
+        if result is None:
+
+            logger.error(
+                "AB AI tool returned None. tool=%s",
+                name,
+            )
+
+            return {
+                "success": False,
+                "tool": name,
+                "error_type": "empty_result",
+                "retryable": True,
+                "error": (
+                    "The business operation returned no result. "
+                    "Review the supplied information and retry "
+                    "if appropriate."
+                ),
+            }
+
+        # ----------------------------------------------------
+        # DICTIONARY RESULT
+        # ----------------------------------------------------
+
+        if isinstance(result, dict):
+
+            normalized = dict(result)
+
+            normalized.setdefault(
+                "tool",
+                name,
+            )
+
+            # -----------------------------------------------
+            # SUCCESS
+            # -----------------------------------------------
+
+            if normalized.get("success") is True:
+
+                normalized.setdefault(
+                    "retryable",
+                    False,
+                )
+
+                logger.info(
+                    "AB AI tool succeeded. tool=%s",
+                    name,
+                )
+
+                return normalized
+
+            # -----------------------------------------------
+            # FAILURE
+            # -----------------------------------------------
+
+            normalized["success"] = False
+
+            normalized.setdefault(
+                "error_type",
+                "business_validation_error",
+            )
+
+            normalized.setdefault(
+                "retryable",
+                True,
+            )
+
+            normalized.setdefault(
+                "error",
+                (
+                    "The business operation could not be "
+                    "completed with the supplied information."
+                ),
+            )
+
+            logger.warning(
+                "AB AI tool returned failure. "
+                "tool=%s error_type=%s error=%s",
+                name,
+                normalized.get("error_type"),
+                normalized.get("error"),
+            )
+
+            return normalized
+
+        # ----------------------------------------------------
+        # NON-DICTIONARY RESULT
+        # ----------------------------------------------------
+
+        logger.warning(
+            "AB AI tool returned unexpected result type. "
+            "tool=%s type=%s",
             name,
+            type(result).__name__,
         )
 
         return {
             "success": False,
+            "tool": name,
+            "error_type": "unexpected_result",
+            "retryable": True,
             "error": (
-                "The requested business operation "
-                "is not available."
+                "The operation returned an unexpected result. "
+                "Retry the request if appropriate."
             ),
         }
 
-    except Exception:
+    # ========================================================
+    # VALIDATION / VALUE ERRORS
+    # ========================================================
 
-        logger.exception(
-            "AB AI tool execution failed. tool=%s",
+    except (ValueError, TypeError) as exc:
+
+        logger.warning(
+            "AB AI tool validation error. "
+            "tool=%s error=%s",
             name,
+            exc,
+            exc_info=True,
         )
 
         return {
             "success": False,
+            "tool": name,
+            "error_type": "validation_error",
+            "retryable": True,
+
+            # This is sent to Gemini so it can understand
+            # what went wrong and correct its next call.
+            "error": str(exc),
+
+            "instruction": (
+                "Review the conversation and supplied arguments. "
+                "If the required information already exists, "
+                "correct the arguments and retry this operation. "
+                "Only ask the client for information that is "
+                "genuinely missing."
+            ),
+        }
+
+    # ========================================================
+    # UNEXPECTED ERRORS
+    # ========================================================
+
+    except Exception as exc:
+
+        logger.exception(
+            "AB AI tool execution failed. "
+            "tool=%s error=%s",
+            name,
+            exc,
+        )
+
+        return {
+            "success": False,
+            "tool": name,
+            "error_type": "internal_error",
+
+            # Don't automatically encourage repeated retries
+            # for unknown server/database errors.
+            "retryable": False,
+
             "error": (
-                "The requested business operation "
-                "could not be completed."
+                "An internal error prevented this business "
+                "operation from completing."
+            ),
+
+            "instruction": (
+                "Do not claim that the operation succeeded. "
+                "Do not ask the client to repeat information "
+                "that is already present in the conversation."
             ),
         }
 
@@ -2491,7 +3131,68 @@ def build_tool_response_content(
 # ============================================================
 # MAIN AB AI FUNCTION
 # ============================================================
+def prepare_tool_result_for_ai(
+    tool_name,
+    result,
+):
+    """
+    Add recovery guidance to failed tool results before
+    returning them to Gemini.
+    """
 
+    if not isinstance(result, dict):
+
+        return {
+            "success": False,
+            "tool": tool_name,
+            "error_type": "invalid_tool_result",
+            "retryable": True,
+            "error": "The tool returned an invalid response.",
+            "ai_instruction": (
+                "Review the request and retry if it can be "
+                "corrected using information already available "
+                "in the conversation."
+            ),
+        }
+
+    prepared = dict(result)
+
+    prepared.setdefault(
+        "tool",
+        tool_name,
+    )
+
+    if prepared.get("success") is True:
+
+        prepared["ai_instruction"] = (
+            "This operation succeeded. Preserve any identifiers "
+            "returned by Django and continue the client's "
+            "business workflow if another operation is required."
+        )
+
+        return prepared
+
+    if prepared.get("retryable") is True:
+
+        prepared["ai_instruction"] = (
+            "This operation failed but may be recoverable. "
+            "Inspect the error and the conversation. "
+            "If the necessary information already exists, "
+            "correct the arguments and retry. "
+            "Do not ask the client to repeat information already "
+            "provided. Do not abandon the client's original "
+            "business intent."
+        )
+
+    else:
+
+        prepared["ai_instruction"] = (
+            "This operation failed and should not be blindly "
+            "retried. Do not claim success. Preserve the client's "
+            "business intent and continue helping where possible."
+        )
+
+    return prepared
 def ask_gemini(
     history,
     conversation=None,
@@ -2745,14 +3446,19 @@ def ask_gemini(
             # ------------------------------------------------
 
             result = execute_tool(
-                name=name,
-                arguments=arguments,
-                conversation=conversation,
-            )
+    name=name,
+    arguments=arguments,
+    conversation=conversation,
+)
+
+            result = prepare_tool_result_for_ai(
+    tool_name=name,
+    result=result,
+)
 
             tool_results.append(
-                result
-            )
+    result
+)
 
         # ----------------------------------------------------
         # SEND TOOL RESULTS BACK TO GEMINI

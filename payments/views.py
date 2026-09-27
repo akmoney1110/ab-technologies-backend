@@ -129,6 +129,9 @@ def get_client_proposal(
         authenticated user email
         ==
         proposal lead email
+
+    When for_update=True, only the Proposal row itself is locked.
+    Related nullable objects are not included in the FOR UPDATE lock.
     """
 
     email = get_request_email(request)
@@ -152,8 +155,16 @@ def get_client_proposal(
         )
     )
 
+    # Lock ONLY the Proposal table.
+    #
+    # This is important because select_related() may create
+    # LEFT OUTER JOINs for nullable relationships such as
+    # organization. PostgreSQL does not allow FOR UPDATE to
+    # be applied to the nullable side of an outer join.
     if for_update:
-        qs = qs.select_for_update()
+        qs = qs.select_for_update(
+            of=("self",)
+        )
 
     proposal = qs.first()
 
@@ -2423,12 +2434,25 @@ class InitiateProposalFullBalancePaymentView(APIView):
     Initiate one Paystack payment for the entire outstanding
     proposal balance.
 
-        POST /api/payments/client/<public_token>/payments/pay-full/
+    POST:
+        /api/payments/client/<public_token>/payments/pay-full/
 
     The amount charged is ONLY the current outstanding balance.
 
-    On success (webhook or verify), ALL payable milestones are
-    marked as paid/completed by `sync_after_successful_payment`.
+    Full-balance payments are proposal-level payments, therefore:
+
+        milestone = None
+
+    On successful verification/webhook processing, payable
+    milestones are synchronized by `sync_after_successful_payment`.
+
+    Concurrency protection:
+        - The request runs inside transaction.atomic.
+        - Only the Proposal row is locked with SELECT ... FOR UPDATE.
+        - Nullable select_related() relationships are NOT included
+          in the database lock.
+        - Existing pending/processing full-balance payments are
+          reused when they contain a valid checkout URL.
     """
 
     permission_classes = [IsAuthenticated]
@@ -2436,12 +2460,27 @@ class InitiateProposalFullBalancePaymentView(APIView):
     @transaction.atomic
     def post(self, request, public_token):
 
-        # ====================================================
-        # GET CLIENT PROPOSAL
-        # ====================================================
+        # ==========================================================
+        # 1. AUTHENTICATE CLIENT + LOCATE PROPOSAL
+        # ==========================================================
+        #
+        # Do NOT lock here.
+        #
+        # get_client_proposal() uses select_related() and may include
+        # nullable relationships. Combining those joins with a broad
+        # FOR UPDATE lock can cause PostgreSQL:
+        #
+        #   FOR UPDATE cannot be applied to the nullable side
+        #   of an outer join
+        #
+        # We authenticate first, then explicitly lock ONLY the
+        # Proposal table below.
+        # ==========================================================
 
         proposal = get_client_proposal(
-            request, public_token, for_update=True
+            request,
+            public_token,
+            for_update=False,
         )
 
         if proposal is None:
@@ -2456,34 +2495,185 @@ class InitiateProposalFullBalancePaymentView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # ====================================================
-        # LOCK PAYMENT STATE
-        # ====================================================
+        proposal_id = proposal.id
+
+        # ==========================================================
+        # 2. LOCK ONLY THE PROPOSAL ROW
+        # ==========================================================
+        #
+        # `of=("self",)` is important.
+        #
+        # We still load related objects efficiently, but PostgreSQL
+        # locks only the Proposal table.
+        # ==========================================================
 
         proposal = (
             Proposal.objects
-            .select_for_update()
-            .select_related("lead", "quote_request", "project_request")
-            .get(id=proposal.id)
+            .select_related(
+                "lead",
+                "quote_request",
+                "project_request",
+            )
+            .select_for_update(
+                of=("self",)
+            )
+            .get(
+                id=proposal_id
+            )
         )
 
-        payment_total = proposal.payment_total or Decimal("0.00")
-        total_paid = proposal.total_paid or Decimal("0.00")
-        outstanding_balance = (
-            proposal.outstanding_balance or Decimal("0.00")
+        # ==========================================================
+        # 3. SAFETY CHECK: CLIENT EMAIL
+        # ==========================================================
+        #
+        # The helper already performs this check. We repeat it after
+        # acquiring the lock so the object we are about to charge
+        # remains associated with the authenticated client.
+        # ==========================================================
+
+        request_email = get_request_email(request)
+
+        lead_email = (
+            str(
+                getattr(
+                    proposal.lead,
+                    "email",
+                    "",
+                )
+                or ""
+            )
+            .strip()
+            .lower()
         )
 
-        # ====================================================
-        # NOTHING TO PAY
-        # ====================================================
+        if not request_email or request_email != lead_email:
+            logger.warning(
+                "Full-balance payment denied after proposal lock: "
+                "proposal=%s user=%s",
+                proposal.id,
+                request.user,
+            )
 
-        if outstanding_balance <= Decimal("0.00"):
             return Response(
                 {
                     "success": False,
                     "detail": (
-                        "This proposal is already fully paid or has no "
-                        "payable balance."
+                        "You are not authorized to make a payment "
+                        "for this proposal."
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ==========================================================
+        # 4. VERIFY PROPOSAL STATUS
+        # ==========================================================
+
+        if proposal.status not in ALLOWED_PROPOSAL_STATUSES:
+            logger.warning(
+                "Full-balance payment denied because proposal %s "
+                "has status=%s",
+                proposal.id,
+                proposal.status,
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "detail": (
+                        "This proposal is not currently eligible "
+                        "for payment."
+                    ),
+                    "proposal_status": proposal.status,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ==========================================================
+        # 5. CALCULATE CURRENT PAYMENT STATE
+        # ==========================================================
+        #
+        # Always calculate this AFTER obtaining the row lock.
+        #
+        # This reduces the chance of two simultaneous requests
+        # calculating the same outstanding balance.
+        # ==========================================================
+
+        payment_total = (
+            proposal.payment_total
+            or Decimal("0.00")
+        )
+
+        total_paid = (
+            proposal.total_paid
+            or Decimal("0.00")
+        )
+
+        outstanding_balance = (
+            proposal.outstanding_balance
+            or Decimal("0.00")
+        )
+
+        try:
+            payment_total = Decimal(payment_total).quantize(
+                Decimal("0.01")
+            )
+
+            total_paid = Decimal(total_paid).quantize(
+                Decimal("0.01")
+            )
+
+            outstanding_balance = Decimal(
+                outstanding_balance
+            ).quantize(
+                Decimal("0.01")
+            )
+
+        except (
+            InvalidOperation,
+            ValueError,
+            TypeError,
+        ):
+
+            logger.exception(
+                "Invalid proposal payment values encountered. "
+                "proposal=%s",
+                proposal.id,
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "detail": (
+                        "The proposal contains invalid payment "
+                        "information. Please contact support."
+                    ),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Never allow a negative charge.
+        if outstanding_balance < Decimal("0.00"):
+            outstanding_balance = Decimal("0.00")
+
+        # ==========================================================
+        # 6. NOTHING LEFT TO PAY
+        # ==========================================================
+
+        if outstanding_balance <= Decimal("0.00"):
+
+            logger.info(
+                "Full-balance payment skipped because proposal %s "
+                "has no outstanding balance.",
+                proposal.id,
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "detail": (
+                        "This proposal is already fully paid or "
+                        "has no payable balance."
                     ),
                     "payment_status": proposal.payment_status,
                     "payment_total": str(payment_total),
@@ -2493,9 +2683,19 @@ class InitiateProposalFullBalancePaymentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # ====================================================
-        # CHECK FOR EXISTING ACTIVE FULL-BALANCE PAYMENT
-        # ====================================================
+        # ==========================================================
+        # 7. FIND EXISTING ACTIVE FULL-BALANCE PAYMENT
+        # ==========================================================
+        #
+        # Full-balance payment:
+        #
+        #   milestone = NULL
+        #   payment_type = "full"
+        #
+        # Because the Proposal row is locked, another request using
+        # this same flow cannot simultaneously pass this section
+        # for the same proposal.
+        # ==========================================================
 
         existing_payment = (
             ProposalPayment.objects
@@ -2505,85 +2705,173 @@ class InitiateProposalFullBalancePaymentView(APIView):
                 payment_type="full",
                 status__in=ACTIVE_PAYMENT_STATUSES,
             )
-            .order_by("-created_at")
+            .order_by(
+                "-created_at"
+            )
             .first()
         )
 
         if existing_payment:
-            provider_response = existing_payment.provider_response or {}
+
+            provider_response = (
+                existing_payment.provider_response
+                or {}
+            )
+
+            # ------------------------------------------------------
+            # Support both the raw Paystack response structure:
+            #
+            # {
+            #     "data": {
+            #         "authorization_url": "...",
+            #         "access_code": "..."
+            #     }
+            # }
+            #
+            # and a flattened structure if one was stored.
+            # ------------------------------------------------------
+
+            response_data = (
+                provider_response.get("data")
+                or {}
+            )
 
             checkout_url = (
-                provider_response
-                .get("data", {})
-                .get("authorization_url")
+                response_data.get("authorization_url")
+                or provider_response.get(
+                    "authorization_url"
+                )
             )
 
             access_code = (
-                provider_response
-                .get("data", {})
-                .get("access_code")
+                response_data.get("access_code")
+                or provider_response.get(
+                    "access_code"
+                )
             )
 
             if checkout_url:
+
+                logger.info(
+                    "Reusing existing full-balance payment. "
+                    "proposal=%s payment=%s",
+                    proposal.id,
+                    existing_payment.id,
+                )
+
                 return Response(
                     {
                         "success": True,
                         "existing": True,
                         "message": (
-                            "A full-balance payment is already being "
-                            "processed."
+                            "A full-balance payment is already "
+                            "being processed."
                         ),
+
                         "payment": {
-                            "id": str(existing_payment.id),
+                            "id": str(
+                                existing_payment.id
+                            ),
                             "reference": (
-                                existing_payment.transaction_reference
+                                existing_payment
+                                .transaction_reference
                             ),
                             "provider_reference": (
-                                existing_payment.provider_reference
+                                existing_payment
+                                .provider_reference
                             ),
-                            "amount": str(existing_payment.amount),
-                            "currency": existing_payment.currency,
-                            "status": existing_payment.status,
-                            "payment_type": existing_payment.payment_type,
+                            "amount": str(
+                                existing_payment.amount
+                            ),
+                            "currency": (
+                                existing_payment.currency
+                            ),
+                            "status": (
+                                existing_payment.status
+                            ),
+                            "payment_type": (
+                                existing_payment.payment_type
+                            ),
                             "milestone_id": None,
                         },
+
                         "proposal": {
-                            "id": str(proposal.id),
-                            "public_token": str(proposal.public_token),
-                            "payment_total": str(proposal.payment_total),
-                            "total_paid": str(proposal.total_paid),
+                            "id": str(
+                                proposal.id
+                            ),
+                            "public_token": str(
+                                proposal.public_token
+                            ),
+                            "payment_total": str(
+                                payment_total
+                            ),
+                            "total_paid": str(
+                                total_paid
+                            ),
                             "outstanding_balance": str(
-                                proposal.outstanding_balance
+                                outstanding_balance
                             ),
-                            "payment_status": proposal.payment_status,
+                            "payment_status": (
+                                proposal.payment_status
+                            ),
                         },
+
                         "paystack": {
-                            "authorization_url": checkout_url,
-                            "access_code": access_code,
+                            "authorization_url": (
+                                checkout_url
+                            ),
+                            "access_code": (
+                                access_code
+                            ),
                             "reference": (
-                                existing_payment.transaction_reference
+                                existing_payment
+                                .transaction_reference
                             ),
                         },
+
+                        # Backwards compatibility for frontend.
                         "checkout_url": checkout_url,
                     },
                     status=status.HTTP_200_OK,
                 )
 
-            # Stale existing payment — mark it failed and fall through
-            # to create a fresh one.
+            # ======================================================
+            # STALE ACTIVE PAYMENT
+            # ======================================================
+            #
+            # A pending/processing payment without an authorization
+            # URL cannot be resumed by the client.
+            #
+            # Mark it failed before creating a fresh checkout.
+            # ======================================================
+
+            logger.warning(
+                "Existing full-balance payment has no checkout "
+                "URL and will be marked failed. "
+                "proposal=%s payment=%s",
+                proposal.id,
+                existing_payment.id,
+            )
+
             existing_payment.mark_failed(
                 provider_response={
                     **provider_response,
                     "reason": (
-                        "Previous full-balance payment session did not "
-                        "contain a checkout URL."
+                        "Previous full-balance payment session "
+                        "did not contain a checkout URL."
                     ),
                 }
             )
 
-        # ====================================================
-        # CREATE PAYMENT RECORD (milestone=None)
-        # ====================================================
+        # ==========================================================
+        # 8. CREATE LOCAL PAYMENT
+        # ==========================================================
+        #
+        # IMPORTANT:
+        #
+        # milestone=None because this transaction pays the entire
+        # remaining proposal balance.
+        # ==========================================================
 
         payment = ProposalPayment.objects.create(
             proposal=proposal,
@@ -2596,139 +2884,349 @@ class InitiateProposalFullBalancePaymentView(APIView):
             initiated_by=request.user,
         )
 
-        # ====================================================
-        # PAYSTACK CALLBACK URL
-        # ====================================================
+        logger.info(
+            "Created full-balance payment. "
+            "proposal=%s payment=%s amount=%s currency=%s",
+            proposal.id,
+            payment.id,
+            outstanding_balance,
+            proposal.currency,
+        )
 
-        callback_url = getattr(settings, "PAYSTACK_CALLBACK_URL", "")
+        # ==========================================================
+        # 9. BUILD PAYSTACK CALLBACK URL
+        # ==========================================================
+
+        callback_url = getattr(
+            settings,
+            "PAYSTACK_CALLBACK_URL",
+            "",
+        )
 
         if callback_url:
-            separator = "&" if "?" in callback_url else "?"
-            callback_url = (
-                f"{callback_url}"
-                f"{separator}"
-                f"public_token={proposal.public_token}"
+
+            parts = urlsplit(
+                callback_url
             )
 
-        # ====================================================
-        # INITIALIZE PAYSTACK
-        # ====================================================
+            query = dict(
+                parse_qsl(
+                    parts.query,
+                    keep_blank_values=True,
+                )
+            )
+
+            # Avoid creating duplicate public_token parameters.
+            query["public_token"] = str(
+                proposal.public_token
+            )
+
+            callback_url = urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    parts.path,
+                    urlencode(query),
+                    parts.fragment,
+                )
+            )
+
+        # ==========================================================
+        # 10. INITIALIZE PAYSTACK
+        # ==========================================================
 
         try:
-            paystack_response = initialize_paystack_payment(
-                payment=payment,
-                email=proposal.lead.email,
-                callback_url=callback_url,
+
+            paystack_response = (
+                initialize_paystack_payment(
+                    payment=payment,
+                    email=proposal.lead.email,
+                    callback_url=callback_url,
+                )
             )
 
         except Exception as exc:
+
             logger.exception(
-                "Failed to initialize full-balance Paystack payment %s",
+                "Failed to initialize full-balance Paystack "
+                "payment. proposal=%s payment=%s",
+                proposal.id,
                 payment.id,
             )
 
-            payment.status = "failed"
-            payment.provider_response = {"error": str(exc)}
-            payment.save(
-                update_fields=["status", "provider_response"]
+            payment.mark_failed(
+                provider_response={
+                    "error": str(exc),
+                    "stage": "initialization",
+                }
             )
 
             return Response(
                 {
                     "success": False,
-                    "detail": "Unable to initialize payment.",
+                    "detail": (
+                        "Unable to initialize payment. "
+                        "Please try again."
+                    ),
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        # ====================================================
-        # MARK PAYMENT AS PROCESSING
-        # ====================================================
+        # ==========================================================
+        # 11. VALIDATE PAYSTACK RESPONSE
+        # ==========================================================
 
-        payment.status = "processing"
-        payment.provider_response = (
-            paystack_response.get("response", {})
+        if not isinstance(
+            paystack_response,
+            dict,
+        ):
+
+            logger.error(
+                "Invalid Paystack initialization response type. "
+                "proposal=%s payment=%s type=%s",
+                proposal.id,
+                payment.id,
+                type(paystack_response).__name__,
+            )
+
+            payment.mark_failed(
+                provider_response={
+                    "error": (
+                        "Invalid response received from "
+                        "payment provider."
+                    ),
+                    "stage": "initialization_response",
+                }
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "detail": (
+                        "The payment provider returned an invalid "
+                        "response. Please try again."
+                    ),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        raw_provider_response = (
+            paystack_response.get("response")
+            or {}
         )
 
-        provider_reference = paystack_response.get("reference")
+        provider_data = (
+            raw_provider_response.get("data")
+            if isinstance(
+                raw_provider_response,
+                dict,
+            )
+            else {}
+        ) or {}
+
+        # ==========================================================
+        # 12. EXTRACT PAYSTACK CHECKOUT INFORMATION
+        # ==========================================================
+
+        authorization_url = (
+            paystack_response.get(
+                "authorization_url"
+            )
+            or provider_data.get(
+                "authorization_url"
+            )
+        )
+
+        access_code = (
+            paystack_response.get(
+                "access_code"
+            )
+            or provider_data.get(
+                "access_code"
+            )
+        )
+
+        provider_reference = (
+            paystack_response.get(
+                "reference"
+            )
+            or provider_data.get(
+                "reference"
+            )
+            or ""
+        )
+
+        # ==========================================================
+        # 13. REQUIRE CHECKOUT URL
+        # ==========================================================
+        #
+        # A payment should not be marked processing if the provider
+        # did not give us somewhere to send the customer.
+        # ==========================================================
+
+        if not authorization_url:
+
+            logger.error(
+                "Paystack initialization returned no "
+                "authorization URL. "
+                "proposal=%s payment=%s",
+                proposal.id,
+                payment.id,
+            )
+
+            payment.mark_failed(
+                provider_response={
+                    "error": (
+                        "Paystack initialization returned no "
+                        "authorization URL."
+                    ),
+                    "stage": "initialization_response",
+                    "response": raw_provider_response,
+                }
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "detail": (
+                        "The payment provider did not return a "
+                        "checkout URL. Please try again."
+                    ),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # ==========================================================
+        # 14. MARK LOCAL PAYMENT PROCESSING
+        # ==========================================================
+
+        payment.status = "processing"
+
+        payment.provider_response = (
+            raw_provider_response
+            if isinstance(
+                raw_provider_response,
+                dict,
+            )
+            else {}
+        )
 
         if provider_reference:
-            payment.provider_reference = provider_reference
+            payment.provider_reference = str(
+                provider_reference
+            )
 
         payment.save(
             update_fields=[
                 "status",
                 "provider_response",
                 "provider_reference",
+                "updated_at",
             ]
         )
 
-        # ====================================================
-        # RESPONSE
-        # ====================================================
-
-        authorization_url = (
-            paystack_response.get("authorization_url")
-            or (
-                paystack_response
-                .get("response", {})
-                .get("data", {})
-                .get("authorization_url")
-            )
+        logger.info(
+            "Full-balance Paystack checkout initialized. "
+            "proposal=%s payment=%s reference=%s",
+            proposal.id,
+            payment.id,
+            payment.transaction_reference,
         )
 
-        access_code = (
-            paystack_response.get("access_code")
-            or (
-                paystack_response
-                .get("response", {})
-                .get("data", {})
-                .get("access_code")
-            )
-        )
+        # ==========================================================
+        # 15. RESPONSE
+        # ==========================================================
 
         return Response(
             {
                 "success": True,
-                "message": "Full balance payment initialized.",
+
+                "existing": False,
+
+                "message": (
+                    "Full balance payment initialized."
+                ),
+
                 "payment": {
-                    "id": str(payment.id),
-                    "reference": payment.transaction_reference,
-                    "provider_reference": payment.provider_reference,
-                    "amount": str(payment.amount),
-                    "currency": payment.currency,
-                    "status": payment.status,
-                    "payment_type": payment.payment_type,
+                    "id": str(
+                        payment.id
+                    ),
+
+                    "reference": (
+                        payment.transaction_reference
+                    ),
+
+                    "provider_reference": (
+                        payment.provider_reference
+                    ),
+
+                    "amount": str(
+                        payment.amount
+                    ),
+
+                    "currency": (
+                        payment.currency
+                    ),
+
+                    "status": (
+                        payment.status
+                    ),
+
+                    "payment_type": (
+                        payment.payment_type
+                    ),
+
                     "milestone_id": None,
                 },
+
                 "proposal": {
-                    "id": str(proposal.id),
-                    "public_token": str(proposal.public_token),
-                    "payment_total": str(proposal.payment_total),
-                    "total_paid": str(proposal.total_paid),
+                    "id": str(
+                        proposal.id
+                    ),
+
+                    "public_token": str(
+                        proposal.public_token
+                    ),
+
+                    "payment_total": str(
+                        payment_total
+                    ),
+
+                    "total_paid": str(
+                        total_paid
+                    ),
+
                     "outstanding_balance": str(
-                        proposal.outstanding_balance
+                        outstanding_balance
                     ),
-                    "payment_status": proposal.payment_status,
+
+                    "payment_status": (
+                        proposal.payment_status
+                    ),
                 },
+
                 "paystack": {
-                    "authorization_url": authorization_url,
-                    "access_code": access_code,
+                    "authorization_url": (
+                        authorization_url
+                    ),
+
+                    "access_code": (
+                        access_code
+                    ),
+
                     "reference": (
-                        paystack_response.get(
-                            "reference",
-                            payment.transaction_reference,
-                        )
+                        provider_reference
+                        or payment.transaction_reference
                     ),
                 },
-                # Convenience: some frontends look for checkout_url at
-                # the top level.
-                "checkout_url": authorization_url,
+
+                # Convenience for existing frontend code.
+                "checkout_url": (
+                    authorization_url
+                ),
             },
             status=status.HTTP_201_CREATED,
         )
-
-
 
 
 

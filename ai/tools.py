@@ -1,9 +1,148 @@
+from decimal import Decimal, InvalidOperation
+import logging
+
+from django.core.exceptions import ValidationError
+from django.db import DataError, IntegrityError, transaction
+
 from crm.models import (
     Lead,
     QuoteRequest,
+    ProcurementQuotationItem,
     ProjectRequest,
     SupportTicket,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+VALID_LEAD_INTENTS = {
+    "general",
+    "service",
+    "procurement",
+    "product",
+    "training",
+    "support",
+    "consultation",
+    "project",
+    "other",
+}
+
+VALID_LEAD_STATUSES = {
+    "new",
+    "contacted",
+    "qualified",
+    "converted",
+    "lost",
+}
+
+VALID_SUPPORT_PRIORITIES = {
+    "low",
+    "normal",
+    "high",
+    "urgent",
+}
+
+
+def _clean_text(value, max_length=None):
+    """Normalize arbitrary AI/tool text before saving it."""
+    value = str(value or "").strip()
+    if max_length is not None:
+        value = value[:max_length]
+    return value
+
+
+def normalize_lead_intent(intent):
+    """Map AI-generated intent text to a valid Lead intent choice."""
+    value = _clean_text(intent).lower()
+
+    if value in VALID_LEAD_INTENTS:
+        return value
+
+    if any(word in value for word in (
+        "procurement", "procure", "purchase", "purchasing", "buy",
+        "hardware", "equipment", "laptop", "computer", "server",
+        "printer", "device", "cctv", "camera", "router", "switch",
+    )):
+        return "procurement"
+
+    if any(word in value for word in (
+        "support", "technical issue", "technical problem",
+        "troubleshoot", "repair", "fix", "maintenance",
+    )):
+        return "support"
+
+    if any(word in value for word in (
+        "training", "course", "learn", "learning",
+        "certification", "workshop",
+    )):
+        return "training"
+
+    if any(word in value for word in (
+        "consultation", "consulting", "consult", "advisory", "advice",
+    )):
+        return "consultation"
+
+    if any(word in value for word in (
+        "project", "implementation", "deployment", "rollout",
+    )):
+        return "project"
+
+    if any(word in value for word in (
+        "product", "subscription", "license", "licence",
+    )):
+        return "product"
+
+    if any(word in value for word in (
+        "service", "software", "website", "web development",
+        "application", "app development", "cloud", "networking",
+        "cybersecurity", "automation", "managed it",
+    )):
+        return "service"
+
+    return "other" if value else "general"
+
+
+def normalize_lead_status(status):
+    """Map AI-generated status text to a valid Lead status choice."""
+    value = _clean_text(status).lower()
+
+    if value in VALID_LEAD_STATUSES:
+        return value
+
+    aliases = {
+        "new lead": "new",
+        "pending": "new",
+        "open": "new",
+        "reached": "contacted",
+        "reached out": "contacted",
+        "in contact": "contacted",
+        "interested": "qualified",
+        "qualified lead": "qualified",
+        "customer": "converted",
+        "won": "converted",
+        "closed won": "converted",
+        "not interested": "lost",
+        "closed lost": "lost",
+    }
+    return aliases.get(value, "new")
+
+
+def normalize_support_priority(priority):
+    """Map AI-generated priority text to a valid SupportTicket choice."""
+    value = _clean_text(priority).lower()
+
+    if value in VALID_SUPPORT_PRIORITIES:
+        return value
+
+    if any(word in value for word in ("critical", "emergency", "immediate")):
+        return "urgent"
+    if any(word in value for word in ("important", "serious", "high priority")):
+        return "high"
+    if any(word in value for word in ("minor", "low priority")):
+        return "low"
+
+    return "normal"
 
 
 def create_lead(
@@ -35,16 +174,26 @@ def create_lead(
         except Exception:
             pass
 
-    lead = Lead.objects.create(
-        name=name or "",
-        email=email or "",
-        phone=phone or "",
-        company=company or "",
-        intent=intent or "general",
-        notes=notes or "",
-        source="ai",
-        conversation=conversation,
-    )
+    normalized_intent = normalize_lead_intent(intent)
+
+    try:
+        lead = Lead.objects.create(
+            name=_clean_text(name, 255),
+            email=_clean_text(email, 254),
+            phone=_clean_text(phone, 50),
+            company=_clean_text(company, 255),
+            intent=normalized_intent,
+            notes=_clean_text(notes),
+            source="ai",
+            conversation=conversation,
+        )
+    except (DataError, IntegrityError) as exc:
+        logger.exception("Failed to create CRM lead.")
+        return {
+            "success": False,
+            "error": "Unable to create lead because the supplied data was invalid.",
+            "details": str(exc),
+        }
 
     return {
         "success": True,
@@ -78,27 +227,35 @@ def update_lead(
         }
 
     if name is not None:
-        lead.name = name
+        lead.name = _clean_text(name, 255)
 
     if email is not None:
-        lead.email = email
+        lead.email = _clean_text(email, 254)
 
     if phone is not None:
-        lead.phone = phone
+        lead.phone = _clean_text(phone, 50)
 
     if company is not None:
-        lead.company = company
+        lead.company = _clean_text(company, 255)
 
     if intent is not None:
-        lead.intent = intent
+        lead.intent = normalize_lead_intent(intent)
 
     if status is not None:
-        lead.status = status
+        lead.status = normalize_lead_status(status)
 
     if notes is not None:
-        lead.notes = notes
+        lead.notes = _clean_text(notes)
 
-    lead.save()
+    try:
+        lead.save()
+    except (DataError, IntegrityError) as exc:
+        logger.exception("Failed to update CRM lead %s.", lead_id)
+        return {
+            "success": False,
+            "error": "Unable to update lead because the supplied data was invalid.",
+            "details": str(exc),
+        }
 
     return {
         "success": True,
@@ -106,17 +263,6 @@ def update_lead(
         "message": "Lead updated successfully.",
     }
 
-# ai/tools.py
-
-from decimal import Decimal, InvalidOperation
-
-from django.db import transaction
-
-from crm.models import (
-    Lead,
-    QuoteRequest,
-    ProcurementQuotationItem,
-)
 
 
 def _to_decimal(value):
@@ -292,15 +438,34 @@ def create_quote_request(
     # CREATE QUOTATION
     # ========================================================
 
-    quotation = QuoteRequest.objects.create(
-        lead=lead,
-        title=title,
-        description=description,
-        purpose=purpose,
-        notes=notes,
-        currency=currency,
-        status="draft",
-    )
+    quote_fields = {
+        "lead": lead,
+        "title": _clean_text(title, 255),
+        "description": description,
+        "purpose": purpose,
+        "notes": notes,
+        "currency": _clean_text(currency, 10) or "NGN",
+        "status": "draft",
+    }
+
+    # The current QuoteRequest model includes these fields. Keeping the
+    # checks makes this tool tolerant of an older deployment during rollout.
+    model_fields = {field.name for field in QuoteRequest._meta.get_fields()}
+
+    if "request_type" in model_fields:
+        valid_types = {"procurement", "service", "product", "mixed", "other"}
+        normalized_type = _clean_text(request_type).lower()
+        quote_fields["request_type"] = (
+            normalized_type if normalized_type in valid_types else "other"
+        )
+
+    if "budget" in model_fields:
+        quote_fields["budget"] = _to_decimal(budget)
+
+    if "deadline" in model_fields:
+        quote_fields["deadline"] = deadline or None
+
+    quotation = QuoteRequest.objects.create(**quote_fields)
 
     # ========================================================
     # CREATE ITEMS
@@ -467,10 +632,10 @@ def create_quote_request(
 
         item = ProcurementQuotationItem.objects.create(
             quotation=quotation,
-            category=category,
-            name=name,
-            brand=brand,
-            model=model,
+            category=_clean_text(category, 100),
+            name=_clean_text(name, 255),
+            brand=_clean_text(brand, 100) or None,
+            model=_clean_text(model, 255) or None,
             description=item_description,
             specifications=specifications,
             quantity=quantity,
@@ -662,13 +827,13 @@ def create_project_request(
 
     project = ProjectRequest.objects.create(
         lead=lead,
-        title=title,
-        description=description or "",
-        project_type=project_type or "",
-        budget=budget,
-        currency=currency or "USD",
+        title=_clean_text(title, 255),
+        description=_clean_text(description),
+        project_type=_clean_text(project_type, 100),
+        budget=_to_decimal(budget),
+        currency=_clean_text(currency, 10) or "USD",
         deadline=deadline,
-        notes=notes or "",
+        notes=_clean_text(notes),
     )
 
     return {
@@ -703,9 +868,9 @@ def create_support_ticket(
 
     ticket = SupportTicket.objects.create(
         lead=lead,
-        subject=subject,
-        description=description,
-        priority=priority or "normal",
+        subject=_clean_text(subject, 255),
+        description=_clean_text(description),
+        priority=normalize_support_priority(priority),
     )
 
     return {
