@@ -1434,19 +1434,27 @@ class ProposalAdmin(admin.ModelAdmin):
     change,
 ):
         """
-    Save proposal related objects.
+    Save proposal-related inline objects without allowing
+    milestone administration to change the agreed proposal price.
 
-    IMPORTANT:
-    ProposalMilestone records represent the PAYMENT SCHEDULE.
-
-    Adding, editing, or deleting a milestone must NEVER
-    recalculate or increase Proposal.total_price.
-
-    Proposal.total_price is the agreed project price.
-
-    Milestones only divide/schedule that existing price.
+    ProposalMilestone is a PAYMENT SCHEDULE only.
+    It is not a pricing source.
         """
 
+        proposal = form.instance
+
+    # Preserve the authoritative price BEFORE saving inlines.
+        original_total_price = (
+        Proposal.objects
+        .filter(pk=proposal.pk)
+        .values_list(
+            "total_price",
+            flat=True,
+        )
+        .first()
+    )
+
+    # Save all inline formsets normally.
         super().save_related(
         request,
         form,
@@ -1454,146 +1462,35 @@ class ProposalAdmin(admin.ModelAdmin):
         change,
     )
 
-        proposal = form.instance
-
     # --------------------------------------------------------
-    # DO NOT RECALCULATE PROPOSAL PRICE HERE
+    # IMPORTANT
     # --------------------------------------------------------
+    # Milestones must NEVER alter Proposal.total_price.
     #
-    # save_related() is called whenever an inline is changed,
-    # including:
-    #
-    #   ProposalMilestone
-    #   ProposalFeature
-    #   ProposalRequirement
-    #   ProposalScreen
-    #
-    # A milestone is a payment schedule and must not modify
-    # the agreed proposal price.
-    #
-    # Pricing recalculation should happen explicitly when
-    # proposal pricing/features change through the pricing
-    # workflow — not simply because related records were saved.
+    # Restore the original DB value after inline processing.
+    # Use QuerySet.update() deliberately so no model/admin
+    # save hooks can recalculate it again.
     # --------------------------------------------------------
 
-        milestone_total = Decimal("0.00")
+        if original_total_price is not None:
 
-        milestones = (
-        proposal.milestone_records
-        .filter(
-            payment_required=True,
+            Proposal.objects.filter(
+            pk=proposal.pk,
+        ).update(
+            total_price=original_total_price,
         )
-        .exclude(
-            status="cancelled",
-        )
+
+        # Keep the in-memory object consistent with DB.
+            proposal.total_price = original_total_price
+
+        self.message_user(
+            request,
+        (
+            "Proposal related records saved successfully. "
+            "The agreed proposal price was preserved."
+        ),
+        level=messages.SUCCESS,
     )
-
-        for milestone in milestones:
-            milestone_total += (
-            milestone.amount
-            or Decimal("0.00")
-        )
-
-        proposal_total = (
-        proposal.payment_total
-        or Decimal("0.00")
-    )
-
-    # --------------------------------------------------------
-    # WARN IF PAYMENT SCHEDULE DOES NOT MATCH PROPOSAL TOTAL
-    # --------------------------------------------------------
-    #
-    # This is only validation/information.
-    #
-    # We intentionally DO NOT:
-    #
-    #     proposal.total_price = milestone_total
-    #
-    # and we intentionally DO NOT:
-    #
-    #     recalculate_proposal(proposal)
-    #
-    # --------------------------------------------------------
-
-        difference = (
-        proposal_total
-        - milestone_total
-    )
-
-        if milestones.exists():
-
-            if difference == Decimal("0.00"):
-
-                self.message_user(
-                    request,
-                (
-                    "Proposal saved successfully. "
-                    "The milestone payment schedule matches "
-                    f"the proposal total of "
-                    f"{proposal.currency} "
-                    f"{proposal_total:,.2f}."
-                ),
-                level=messages.SUCCESS,
-            )
-
-            elif milestone_total < proposal_total:
-
-                self.message_user(
-                request,
-                (
-                    "Proposal saved successfully. "
-                    "The proposal price was NOT changed. "
-                    f"Milestones currently total "
-                    f"{proposal.currency} "
-                    f"{milestone_total:,.2f}, while the "
-                    f"proposal total is "
-                    f"{proposal.currency} "
-                    f"{proposal_total:,.2f}. "
-                    f"{proposal.currency} "
-                    f"{difference:,.2f} remains "
-                    "unallocated to milestones."
-                ),
-                level=messages.WARNING,
-            )
-
-            else:
-
-                overage = (
-                milestone_total
-                - proposal_total
-            )
-
-                self.message_user(
-                request,
-                (
-                    "Proposal saved, but the milestone "
-                    "schedule exceeds the proposal total. "
-                    f"Milestones total "
-                    f"{proposal.currency} "
-                    f"{milestone_total:,.2f}, while the "
-                    f"proposal total is "
-                    f"{proposal.currency} "
-                    f"{proposal_total:,.2f}. "
-                    f"The schedule exceeds the proposal "
-                    f"by {proposal.currency} "
-                    f"{overage:,.2f}. "
-                    "The client's proposal total was "
-                    "NOT increased."
-                ),
-                level=messages.WARNING,
-            )
-
-        else:
-
-            self.message_user(
-                request,
-            (
-                "Proposal saved successfully. "
-                "No payment milestones are currently configured. "
-                "The proposal total was not changed."
-            ),
-            level=messages.SUCCESS,
-        )
 
     # ========================================================
     # CUSTOM URLS
