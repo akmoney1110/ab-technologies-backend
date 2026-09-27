@@ -1427,47 +1427,170 @@ class ProposalAdmin(admin.ModelAdmin):
     # ========================================================
 
     def save_related(
-        self,
+    self,
+    request,
+    form,
+    formsets,
+    change,
+):
+        """
+    Save proposal related objects.
+
+    IMPORTANT:
+    ProposalMilestone records represent the PAYMENT SCHEDULE.
+
+    Adding, editing, or deleting a milestone must NEVER
+    recalculate or increase Proposal.total_price.
+
+    Proposal.total_price is the agreed project price.
+
+    Milestones only divide/schedule that existing price.
+        """
+
+        super().save_related(
         request,
         form,
         formsets,
         change,
-    ):
-
-        super().save_related(
-            request,
-            form,
-            formsets,
-            change,
-        )
+    )
 
         proposal = form.instance
 
-        try:
+    # --------------------------------------------------------
+    # DO NOT RECALCULATE PROPOSAL PRICE HERE
+    # --------------------------------------------------------
+    #
+    # save_related() is called whenever an inline is changed,
+    # including:
+    #
+    #   ProposalMilestone
+    #   ProposalFeature
+    #   ProposalRequirement
+    #   ProposalScreen
+    #
+    # A milestone is a payment schedule and must not modify
+    # the agreed proposal price.
+    #
+    # Pricing recalculation should happen explicitly when
+    # proposal pricing/features change through the pricing
+    # workflow — not simply because related records were saved.
+    # --------------------------------------------------------
 
-            recalculate_proposal(
-                proposal,
+        milestone_total = Decimal("0.00")
+
+        milestones = (
+        proposal.milestone_records
+        .filter(
+            payment_required=True,
+        )
+        .exclude(
+            status="cancelled",
+        )
+    )
+
+        for milestone in milestones:
+            milestone_total += (
+            milestone.amount
+            or Decimal("0.00")
+        )
+
+        proposal_total = (
+        proposal.payment_total
+        or Decimal("0.00")
+    )
+
+    # --------------------------------------------------------
+    # WARN IF PAYMENT SCHEDULE DOES NOT MATCH PROPOSAL TOTAL
+    # --------------------------------------------------------
+    #
+    # This is only validation/information.
+    #
+    # We intentionally DO NOT:
+    #
+    #     proposal.total_price = milestone_total
+    #
+    # and we intentionally DO NOT:
+    #
+    #     recalculate_proposal(proposal)
+    #
+    # --------------------------------------------------------
+
+        difference = (
+        proposal_total
+        - milestone_total
+    )
+
+        if milestones.exists():
+
+            if difference == Decimal("0.00"):
+
+                self.message_user(
+                    request,
+                (
+                    "Proposal saved successfully. "
+                    "The milestone payment schedule matches "
+                    f"the proposal total of "
+                    f"{proposal.currency} "
+                    f"{proposal_total:,.2f}."
+                ),
+                level=messages.SUCCESS,
             )
 
-        except Exception as exc:
+            elif milestone_total < proposal_total:
+
+                self.message_user(
+                request,
+                (
+                    "Proposal saved successfully. "
+                    "The proposal price was NOT changed. "
+                    f"Milestones currently total "
+                    f"{proposal.currency} "
+                    f"{milestone_total:,.2f}, while the "
+                    f"proposal total is "
+                    f"{proposal.currency} "
+                    f"{proposal_total:,.2f}. "
+                    f"{proposal.currency} "
+                    f"{difference:,.2f} remains "
+                    "unallocated to milestones."
+                ),
+                level=messages.WARNING,
+            )
+
+            else:
+
+                overage = (
+                milestone_total
+                - proposal_total
+            )
+
+                self.message_user(
+                request,
+                (
+                    "Proposal saved, but the milestone "
+                    "schedule exceeds the proposal total. "
+                    f"Milestones total "
+                    f"{proposal.currency} "
+                    f"{milestone_total:,.2f}, while the "
+                    f"proposal total is "
+                    f"{proposal.currency} "
+                    f"{proposal_total:,.2f}. "
+                    f"The schedule exceeds the proposal "
+                    f"by {proposal.currency} "
+                    f"{overage:,.2f}. "
+                    "The client's proposal total was "
+                    "NOT increased."
+                ),
+                level=messages.WARNING,
+            )
+
+        else:
 
             self.message_user(
                 request,
-                (
-                    "Proposal was saved, but "
-                    "pricing recalculation failed: "
-                    f"{exc}"
-                ),
-                level=messages.ERROR,
-            )
-
-            return
-
-        self.message_user(
-            request,
             (
-                "Proposal saved and pricing "
-                "recalculated successfully."
+                "Proposal saved successfully. "
+                "No payment milestones are currently configured. "
+                "The proposal total was not changed."
             ),
             level=messages.SUCCESS,
         )
