@@ -270,7 +270,7 @@ class ProposalFeatureAdminForm(forms.ModelForm):
     feature_key = forms.ChoiceField(
         label="Feature",
         choices=[],
-        required=True,
+        required=False,
     )
 
     class Meta:
@@ -294,20 +294,32 @@ class ProposalFeatureAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.fields["feature_key"].choices = get_catalog_choices()
+    # IMPORTANT:
+    # Always provide an empty option.
+    #
+    # Without this, Django/browser can treat the first real
+    # catalog feature as the selected value for a new inline.
+        self.fields["feature_key"].choices = [
+        ("", "---------"),
+        *get_catalog_choices(),
+    ]
 
-        # Existing records
+    # Existing records must keep their saved feature.
         if self.instance and self.instance.pk:
             if self.instance.feature_key in PRICING_CATALOG:
                 self.initial["feature_key"] = self.instance.feature_key
 
     def clean_feature_key(self):
-        feature_key = self.cleaned_data["feature_key"]
+        feature_key = self.cleaned_data.get("feature_key")
+
+    # Allow completely empty extra inline forms.
+        if not feature_key:
+            return feature_key
 
         if feature_key not in PRICING_CATALOG:
             raise forms.ValidationError(
-                "The selected feature does not exist in the pricing catalog."
-            )
+            "The selected feature does not exist in the pricing catalog."
+        )
 
         return feature_key
 
